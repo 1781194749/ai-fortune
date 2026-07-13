@@ -1,0 +1,90 @@
+import { checkEntitlement, getResolvedStarCost } from "@/lib/entitlements";
+import { spendStars } from "@/lib/mock-payment-store";
+import { createMockReport } from "@/lib/report-store";
+import { buildBaziReading, calculateBazi, type BaziInput } from "@/lib/bazi";
+import { createSession, getSession } from "@/lib/session";
+
+export async function POST(request: Request) {
+  const session = await getSession();
+
+  if (!session) {
+    return Response.json({ ok: false, message: "请先登录。" }, { status: 401 });
+  }
+
+  const body = (await request.json().catch(() => null)) as Partial<BaziInput> | null;
+  const input: BaziInput = {
+    name: body?.name?.trim(),
+    gender: body?.gender?.trim(),
+    birthDate: body?.birthDate?.trim() ?? "",
+    birthTime: body?.birthTime?.trim() ?? "",
+    birthPlace: body?.birthPlace?.trim(),
+  };
+
+  const entitlement = checkEntitlement(session, "bazi_brief");
+
+  if (!entitlement.ok) {
+    return Response.json(
+      {
+        ok: false,
+        message: `星力不足，需要 ${entitlement.requiredStars} 星力，当前 ${entitlement.balance} 星力。`,
+        requiredStars: entitlement.requiredStars,
+        balance: entitlement.balance,
+      },
+      { status: 402 },
+    );
+  }
+
+  let chart: ReturnType<typeof calculateBazi>;
+
+  try {
+    chart = calculateBazi(input);
+  } catch {
+    return Response.json(
+      { ok: false, message: "出生日期或时间格式不正确。" },
+      { status: 400 },
+    );
+  }
+
+  const reading = buildBaziReading(chart);
+  const report = await createMockReport({
+    userId: session.userId,
+    type: "BAZI_WUXING",
+    title: reading.title,
+    summary: reading.summary,
+    content: reading.content,
+    inputSnapshot: input,
+    toolResults: chart,
+    modelUsed: "local-bazi-calculator",
+    costTokens: 0,
+  });
+  const cost = getResolvedStarCost("bazi_brief");
+  const spendResult = await spendStars(session, {
+    featureCode: "bazi_brief",
+    amount: cost,
+    reportId: report.id,
+    reason: `${reading.title} 消耗 ${cost} 星力`,
+  });
+
+  if (!spendResult.ok) {
+    return Response.json(
+      { ok: false, message: "星力不足，无法完成本次八字简析。" },
+      { status: 402 },
+    );
+  }
+
+  await createSession({
+    userId: spendResult.nextSession.userId,
+    emailMasked: spendResult.nextSession.emailMasked,
+    tier: spendResult.nextSession.tier,
+    starBalance: spendResult.nextSession.starBalance,
+  });
+
+  return Response.json({
+    ok: true,
+    steps: ["校验出生信息", "计算四柱八字", "统计五行分布", "生成简析报告"],
+    cost,
+    balanceAfter: spendResult.nextSession.starBalance,
+    chart,
+    report,
+  });
+}

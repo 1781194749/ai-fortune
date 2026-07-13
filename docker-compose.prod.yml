@@ -1,0 +1,59 @@
+name: ai-fortune-prod
+
+services:
+  ai-fortune:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runner
+    image: ai-fortune:prod
+    container_name: ai-fortune
+    restart: unless-stopped
+    env_file:
+      - .env.production.local
+    environment:
+      NODE_ENV: production
+      HOSTNAME: 0.0.0.0
+      PORT: "3000"
+      NEXT_TELEMETRY_DISABLED: "1"
+    ports:
+      - "${AI_FORTUNE_PORT:-3000}:3000"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "node -e \"fetch('http://127.0.0.1:3000/').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\"",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  ai-fortune-tools:
+    profiles:
+      - tools
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: tools
+    image: ai-fortune:tools
+    env_file:
+      - .env.production.local
+    environment:
+      NODE_ENV: production
+      NEXT_TELEMETRY_DISABLED: "1"
+    command: ["npm", "run", "launch:preflight"]
+
+  membership-lifecycle-worker:
+    image: ai-fortune:prod
+    restart: unless-stopped
+    env_file:
+      - .env.production.local
+    environment:
+      NODE_ENV: production
+      MEMBERSHIP_RECONCILE_URL: http://ai-fortune:3000/api/internal/memberships/reconcile
+      MEMBERSHIP_RECONCILE_INTERVAL_MS: "300000"
+    depends_on:
+      ai-fortune:
+        condition: service_healthy
+    command: ["node", "scripts/membership-reconcile-worker.mjs"]

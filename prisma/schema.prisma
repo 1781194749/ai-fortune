@@ -1,0 +1,341 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum AuthProvider {
+  EMAIL
+  WECHAT
+  GOOGLE
+  APPLE
+}
+
+enum MembershipTier {
+  FREE
+  TRIAL
+  MONTHLY
+  PRO
+  YEARLY
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  CLOSED
+  REFUNDED
+  FAILED
+}
+
+enum PaymentProvider {
+  MOCK
+  ALIPAY
+  WECHAT_PAY
+  STRIPE
+}
+
+enum WalletEventType {
+  GRANT
+  SPEND
+  REFUND
+  EXPIRE
+  ADJUST
+}
+
+enum EntitlementKind {
+  DEEP_REPORT
+  PALM_READING
+}
+
+enum EntitlementEventType {
+  GRANT
+  SPEND
+  REFUND
+  EXPIRE
+  ADJUST
+}
+
+enum SessionMode {
+  CHAT
+  TAROT
+  BAZI
+  BAGUA
+  PALM
+  REPORT
+}
+
+enum MessageRole {
+  USER
+  ASSISTANT
+  SYSTEM
+  TOOL
+}
+
+enum ReportType {
+  TAROT
+  PALM
+  BAZI_WUXING
+  BAGUA
+  COMPOSITE
+  YEARLY
+}
+
+enum ReportStatus {
+  GENERATING
+  COMPLETED
+  FAILED
+}
+
+enum ImageKind {
+  PALM
+  AVATAR
+  REPORT_ASSET
+}
+
+model User {
+  id           String              @id @default(cuid())
+  email        String?             @unique
+  displayName  String?
+  avatarUrl    String?
+  locale       String              @default("zh-CN")
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+  accounts     AuthAccount[]
+  profile      FortuneProfile?
+  memberships  Membership[]
+  orders       Order[]
+  walletEvents WalletTransaction[]
+  entitlementAccounts EntitlementAccount[]
+  entitlementEvents EntitlementTransaction[]
+  sessions     AiSession[]
+  reports      Report[]
+  imageUploads ImageUpload[]
+  usageLogs    UsageLog[]
+}
+
+model AuthAccount {
+  id             String       @id @default(cuid())
+  userId         String
+  provider       AuthProvider
+  providerUserId String
+  unionId        String?
+  createdAt      DateTime     @default(now())
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerUserId])
+  @@index([userId])
+}
+
+model FortuneProfile {
+  id                 String    @id @default(cuid())
+  userId             String    @unique
+  name               String?
+  gender             String?
+  birthday           DateTime?
+  birthTime          String?
+  birthPlace         String?
+  calendarType       String    @default("solar")
+  baziChart          Json?
+  wuxingProfile      Json?
+  zodiac             String?
+  recurringTopics    Json?
+  relationshipStatus String?
+  careerFocus        String?
+  preferences        Json?
+  memorySummary      String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Membership {
+  id          String         @id @default(cuid())
+  userId      String
+  tier        MembershipTier
+  startsAt    DateTime       @default(now())
+  endsAt      DateTime?
+  starBalance Int            @default(0)
+  isActive    Boolean        @default(true)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isActive])
+}
+
+model WalletTransaction {
+  id           String          @id @default(cuid())
+  userId       String
+  type         WalletEventType
+  amount       Int
+  balanceAfter Int
+  reason       String
+  orderId      String?
+  reportId     String?
+  metadata     Json?
+  createdAt    DateTime        @default(now())
+  user         User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  order        Order?          @relation(fields: [orderId], references: [id])
+  report       Report?         @relation(fields: [reportId], references: [id])
+
+  @@index([userId, createdAt])
+}
+
+model EntitlementAccount {
+  id           String                   @id @default(cuid())
+  userId       String
+  kind         EntitlementKind
+  balance      Int                      @default(0)
+  createdAt    DateTime                 @default(now())
+  updatedAt    DateTime                 @updatedAt
+  user         User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions EntitlementTransaction[]
+
+  @@unique([userId, kind])
+  @@index([userId])
+}
+
+model EntitlementTransaction {
+  id             String                @id @default(cuid())
+  accountId      String
+  userId         String
+  kind           EntitlementKind
+  type           EntitlementEventType
+  amount         Int
+  balanceAfter   Int
+  reason         String
+  orderId        String?
+  reportId       String?
+  idempotencyKey String?               @unique
+  metadata       Json?
+  createdAt      DateTime              @default(now())
+  account        EntitlementAccount    @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  user           User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  order          Order?                @relation(fields: [orderId], references: [id])
+  report         Report?               @relation(fields: [reportId], references: [id])
+
+  @@index([userId, kind, createdAt])
+  @@index([orderId])
+  @@index([reportId])
+}
+
+model Order {
+  id              String              @id @default(cuid())
+  userId          String
+  provider        PaymentProvider
+  status          OrderStatus         @default(PENDING)
+  productCode     String
+  productName     String
+  amountCents     Int
+  currency        String              @default("CNY")
+  providerOrderId String?
+  notifyPayload   Json?
+  paidAt          DateTime?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  user            User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  walletEvents    WalletTransaction[]
+  entitlementEvents EntitlementTransaction[]
+  reports         Report[]
+
+  @@index([userId, status])
+  @@index([provider, providerOrderId])
+}
+
+model AiSession {
+  id        String      @id @default(cuid())
+  userId    String
+  mode      SessionMode
+  title     String
+  metadata  Json?
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages  Message[]
+  reports   Report[]
+
+  @@index([userId, updatedAt])
+}
+
+model Message {
+  id         String      @id @default(cuid())
+  sessionId  String
+  role       MessageRole
+  content    String
+  toolName   String?
+  toolResult Json?
+  tokensIn   Int?
+  tokensOut  Int?
+  createdAt  DateTime    @default(now())
+  session    AiSession   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, createdAt])
+}
+
+model Report {
+  id            String              @id @default(cuid())
+  userId        String
+  sessionId     String?
+  orderId       String?
+  type          ReportType
+  status        ReportStatus        @default(GENERATING)
+  title         String
+  summary       String?
+  inputSnapshot Json?
+  toolResults   Json?
+  content       String?
+  modelUsed     String?
+  costTokens    Int?
+  shareSlug     String?             @unique
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+  user          User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  session       AiSession?          @relation(fields: [sessionId], references: [id])
+  order         Order?              @relation(fields: [orderId], references: [id])
+  walletEvents  WalletTransaction[]
+  entitlementEvents EntitlementTransaction[]
+
+  @@index([userId, type, createdAt])
+}
+
+model ImageUpload {
+  id          String    @id @default(cuid())
+  userId      String
+  kind        ImageKind
+  qiniuKey    String
+  url         String
+  contentType String
+  sizeBytes   Int
+  metadata    Json?
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, kind, createdAt])
+}
+
+model UsageLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  provider   String
+  model      String
+  feature    String
+  tokensIn   Int?
+  tokensOut  Int?
+  imageCount Int      @default(0)
+  costCents  Int?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([feature, createdAt])
+}
