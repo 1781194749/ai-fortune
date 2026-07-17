@@ -9,11 +9,11 @@ import { PrintActions } from "./print-actions";
 
 function reportTypeLabel(type: string) {
   if (type === "BAZI_WUXING") {
-    return "八字五行";
+    return "八字命盘";
   }
 
   if (type === "BAGUA") {
-    return "八卦问事";
+    return "六十四卦";
   }
 
   if (type === "PALM") {

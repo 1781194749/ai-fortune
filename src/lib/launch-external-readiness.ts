@@ -238,8 +238,15 @@ export function externalReadinessStatusLabel(status: ExternalReadinessStatus) {
   return "未开始";
 }
 
-function healthStatus(status: ExternalReadinessStatus): HealthStatus {
-  if (status === "ready") {
+function healthStatus(item: {
+  id: ExternalReadinessItemId;
+  status: ExternalReadinessStatus;
+}): HealthStatus {
+  if (item.id === "qiniu" || item.id === "wechat_open" || item.id === "wechat_pay" || item.id === "alipay") {
+    return item.status === "ready" ? "ready" : "warning";
+  }
+
+  if (item.status === "ready") {
     return "ready";
   }
 
@@ -380,7 +387,10 @@ function buildItem(base: (typeof defaultItems)[number]) {
   return {
     ...base,
     status,
-    healthStatus: healthStatus(status),
+    healthStatus: healthStatus({
+      ...base,
+      status,
+    }),
     targetDate: snapshot?.targetDate,
     receiptNo: snapshot?.receiptNo,
     evidenceUrl: snapshot?.evidenceUrl,

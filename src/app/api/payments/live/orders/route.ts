@@ -4,13 +4,15 @@ import {
   recordCheckoutExperimentOrderCreated,
 } from "@/lib/checkout-experiment";
 import { getLivePaymentLaunchGate } from "@/lib/live-payment-launch-gate";
+import { settleOptionalSideEffects } from "@/lib/optional-side-effects";
 import { createLivePaymentCheckout, isLivePaymentChannel } from "@/lib/payment-adapters";
 import { quotePromotion, recordPromotionEvent } from "@/lib/promo-code";
+import { isDatabaseUnavailableError } from "@/lib/prisma";
 import { getRuntimeProduct } from "@/lib/product-config";
 import { getSession } from "@/lib/session";
 import { recordShareAttributionConversion } from "@/lib/share-attribution";
 
-export async function POST(request: Request) {
+async function createLiveOrderResponse(request: Request) {
   const session = await getSession();
 
   if (!session) {
@@ -85,32 +87,49 @@ export async function POST(request: Request) {
     return Response.json(result, { status: 400 });
   }
 
-  await recordCheckoutExperimentOrderCreated({
-    assignment: checkoutExperiment,
-    userId: session.userId,
-    orderId: result.order.id,
-    productCode: result.order.productCode,
-    provider: channel === "alipay" ? "ALIPAY" : "WECHAT_PAY",
-    amountCents: result.order.amountCents,
-    currency: result.order.currency,
-  });
-  await recordPromotionEvent({
-    event: "order_created",
-    userId: session.userId,
-    orderId: result.order.id,
-    productCode: result.order.productCode,
-    provider: channel === "alipay" ? "ALIPAY" : "WECHAT_PAY",
-    promotion: promotionQuote?.ok ? promotionQuote.promotion : undefined,
-  });
-  await recordShareAttributionConversion({
-    event: "order_created",
-    userId: session.userId,
-    orderId: result.order.id,
-    productCode: result.order.productCode,
-    provider: channel === "alipay" ? "ALIPAY" : "WECHAT_PAY",
-    amountCents: result.order.amountCents,
-    currency: result.order.currency,
-  });
+  await settleOptionalSideEffects("live order created telemetry", [
+    recordCheckoutExperimentOrderCreated({
+      assignment: checkoutExperiment,
+      userId: session.userId,
+      orderId: result.order.id,
+      productCode: result.order.productCode,
+      provider: channel === "alipay" ? "ALIPAY" : "WECHAT_PAY",
+      amountCents: result.order.amountCents,
+      currency: result.order.currency,
+    }),
+    recordPromotionEvent({
+      event: "order_created",
+      userId: session.userId,
+      orderId: result.order.id,
+      productCode: result.order.productCode,
+      provider: channel === "alipay" ? "ALIPAY" : "WECHAT_PAY",
+      promotion: promotionQuote?.ok ? promotionQuote.promotion : undefined,
+    }),
+    recordShareAttributionConversion({
+      event: "order_created",
+      userId: session.userId,
+      orderId: result.order.id,
+      productCode: result.order.productCode,
+      provider: channel === "alipay" ? "ALIPAY" : "WECHAT_PAY",
+      amountCents: result.order.amountCents,
+      currency: result.order.currency,
+    }),
+  ]);
 
   return Response.json(result);
+}
+
+export async function POST(request: Request) {
+  try {
+    return await createLiveOrderResponse(request);
+  } catch (error) {
+    if (isDatabaseUnavailableError(error)) {
+      return Response.json(
+        { ok: false, code: error.code, message: error.message },
+        { status: error.status },
+      );
+    }
+
+    throw error;
+  }
 }

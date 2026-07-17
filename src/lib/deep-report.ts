@@ -1,5 +1,6 @@
 import "server-only";
 
+import { zodTextFormat } from "openai/helpers/zod";
 import {
   getProduct,
   type FeatureCode,
@@ -13,6 +14,19 @@ import { buildAiCostMetadata, estimateOpenAiCostCents } from "@/lib/ai-cost";
 import { getOpenAIClient, getPremiumOpenAIModel } from "@/lib/openai-client";
 import type { MockReportType } from "@/lib/report-store";
 import { createUsageLog } from "@/lib/usage-log-store";
+import {
+  assessSafetyRisk,
+  buildDeepReportPromptRunMetadata,
+  buildDeepReportEvidencePackage,
+  buildDeterministicDeepReport,
+  composeDeepReportPrompt,
+  deepReportAnswerSchema,
+  renderDeepReportAnswer,
+  routePromptRequest,
+  validateStructuredDeepReport,
+  type DeepReportAnswer,
+  type PromptValidationSummary,
+} from "@/lib/prompts";
 
 export const deepReportProductCodes = [
   "bazi_detail",
@@ -34,8 +48,94 @@ export type DeepReportDraft = {
   usageLogId: string;
 };
 
+export type DeepReportGenerationInputSnapshot = {
+  version: 1;
+  capturedAt: string;
+  productCode: DeepReportProductCode;
+  productName?: string;
+  orderId?: string;
+  paymentSource?: "membership_quota";
+  entitlementKind?: "deep_report";
+  profile: FortuneProfileRecord | null;
+  profileMemory: string;
+  localDraft: {
+    type: MockReportType;
+    title: string;
+    summary: string;
+    content: string;
+    toolResults: unknown;
+  };
+  profileId?: string;
+  profileCompleteness: number;
+};
+
 function estimateTokens(text: string) {
   return Math.max(1, Math.ceil(text.length / 2));
+}
+
+function asObjectRecord(value: unknown) {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function validationSummary(input: {
+  ok: boolean;
+  errors?: string[];
+  repaired?: boolean;
+  repairAttempts?: number;
+  degraded?: boolean;
+}): PromptValidationSummary {
+  return {
+    ok: input.ok,
+    errors: input.errors ?? [],
+    repaired: input.repaired ?? false,
+    repairAttempts: input.repairAttempts ?? 0,
+    degraded: input.degraded ?? false,
+  };
+}
+
+function createDeepReportPrompt(input: {
+  userId: string;
+  inputSnapshot: DeepReportGenerationInputSnapshot;
+}) {
+  const subject = {
+    kind: "self" as const,
+    label: input.inputSnapshot.profile?.name || "本人",
+    memberProfileRole: "subject" as const,
+  };
+  const safety = assessSafetyRisk(`${input.inputSnapshot.productName ?? "深度报告"} 深度报告`);
+  const evidence = buildDeepReportEvidencePackage({
+    subject,
+    profile: input.inputSnapshot.profile,
+    localDraft: input.inputSnapshot.localDraft,
+  });
+  const route = routePromptRequest({
+    question: input.inputSnapshot.productName ?? "深度报告",
+    serviceTier: "deep",
+    safety,
+    method: "bazi",
+    explicitMethod: true,
+    isFollowUp: false,
+    answerShape: "single_reading",
+  });
+  const compilation = composeDeepReportPrompt({
+    userId: input.userId,
+    productCode: input.inputSnapshot.productCode,
+    productName: input.inputSnapshot.productName ?? "深度报告",
+    profileMemory: input.inputSnapshot.profileMemory,
+    localDraft: {
+      title: input.inputSnapshot.localDraft.title,
+      summary: input.inputSnapshot.localDraft.summary,
+      content: input.inputSnapshot.localDraft.content,
+      type: input.inputSnapshot.localDraft.type,
+    },
+    route,
+    evidence,
+    profileCompleteness: input.inputSnapshot.profileCompleteness,
+  });
+
+  return { evidence, route, compilation };
 }
 
 export function isDeepReportProductCode(value: string): value is DeepReportProductCode {
@@ -109,6 +209,9 @@ function buildLocalDeepReport(input: {
     "1. 先选择一个最重要的主题，不要同时押注太多方向。",
     "2. 把接下来 30 天拆成一个可执行的小周期，记录情绪、机会和阻力。",
     "3. 遇到重大医疗、法律、投资或人生选择时，以专业意见和现实证据为准。",
+    input.productCode === "composite_report"
+      ? "当前生成输入如果没有经过手相视觉工具验证，本报告只保留八字与档案部分，并明确标记手相资料缺口，不补造掌纹细节。"
+      : "",
     "",
     "本报告仅供娱乐、文化参考和自我探索，不构成医疗、投资、法律或重大人生决策建议。",
   ].join("\n");
@@ -131,7 +234,7 @@ function getFeatureCode(productCode: DeepReportProductCode): FeatureCode {
   return productCode === "yearly_report" ? "yearly_report" : "deep_report";
 }
 
-export async function buildPaidDeepReport(input: {
+export async function createDeepReportGenerationInputSnapshot(input: {
   userId: string;
   productCode: DeepReportProductCode;
   orderId?: string;
@@ -139,7 +242,7 @@ export async function buildPaidDeepReport(input: {
     paymentSource: "membership_quota";
     entitlementKind: "deep_report";
   };
-}): Promise<DeepReportDraft> {
+}) {
   const profile = await getFortuneProfile(input.userId);
   const profileMemory = buildProfileMemory(profile);
   const local = buildLocalDeepReport({
@@ -148,47 +251,185 @@ export async function buildPaidDeepReport(input: {
     profileMemory,
   });
   const product = getProduct(input.productCode);
-  const inputSnapshot = {
+
+  return {
+    version: 1,
+    capturedAt: new Date().toISOString(),
     productCode: input.productCode,
     productName: product?.name,
     orderId: input.orderId,
     ...input.entitlement,
+    profile,
+    profileMemory,
+    localDraft: local,
     profileId: profile?.id,
     profileCompleteness: profile?.completeness ?? 0,
+  } satisfies DeepReportGenerationInputSnapshot;
+}
+
+export async function buildPaidDeepReport(input: {
+  userId: string;
+  productCode: DeepReportProductCode;
+  orderId?: string;
+  entitlement?: {
+    paymentSource: "membership_quota";
+    entitlementKind: "deep_report";
   };
+  generationInput?: DeepReportGenerationInputSnapshot;
+  usageIdempotencyKey?: string;
+}): Promise<DeepReportDraft> {
+  const inputSnapshot =
+    input.generationInput ??
+    (await createDeepReportGenerationInputSnapshot({
+      userId: input.userId,
+      productCode: input.productCode,
+      orderId: input.orderId,
+      entitlement: input.entitlement,
+    }));
+  const local = inputSnapshot.localDraft;
   const client = getOpenAIClient();
   const model = getPremiumOpenAIModel();
-  const feature = getFeatureCode(input.productCode);
+  const feature = getFeatureCode(inputSnapshot.productCode);
+  const prompt = createDeepReportPrompt({
+    userId: input.userId,
+    inputSnapshot,
+  });
 
   if (client) {
     try {
-      const response = await client.responses.create({
+      const response = await client.responses.parse({
         model,
-        instructions:
-          "你是玄机 AI 的深度报告顾问。请基于后端提供的会员档案、八字五行摘要和本地报告草稿，生成中文深度报告。语气温和、克制、专业。不要编造后端没有提供的出生信息、手相细节或确定性预测。不得给医疗、投资、法律或重大人生决策的确定性建议。",
+        instructions: prompt.compilation.instructions,
         input: [
           {
             role: "user",
             content: [
               {
                 type: "input_text",
-                text: JSON.stringify({
-                  product,
-                  inputSnapshot,
-                  profileMemory,
-                  localDraft: local.content,
-                }),
+                text: prompt.compilation.userPayloadText,
               },
             ],
           },
         ],
-        max_output_tokens: input.productCode === "yearly_report" ? 1500 : 1100,
-        prompt_cache_key: `xuanji:deep-report:${input.userId}`,
+        text: {
+          format: zodTextFormat(deepReportAnswerSchema, "xuanji_deep_report"),
+        },
+        max_output_tokens: inputSnapshot.productCode === "yearly_report" ? 3200 : 2400,
+        prompt_cache_key: `xuanji:deep-report:${prompt.compilation.metadataBase.prompt.promptReleaseId}`,
+        safety_identifier: prompt.compilation.safetyIdentifier,
+        store: false,
       });
-      const content = response.output_text?.trim() || local.content;
-      const tokensIn = response.usage?.input_tokens ?? estimateTokens(profileMemory);
-      const tokensOut = response.usage?.output_tokens ?? estimateTokens(content);
+      let tokensIn =
+        response.usage?.input_tokens ?? estimateTokens(inputSnapshot.profileMemory);
+      let tokensOut = response.usage?.output_tokens ?? estimateTokens(response.output_text ?? "");
+      let structuredAnswer: DeepReportAnswer | null = response.output_parsed;
+      let validation = validationSummary({
+        ok: false,
+        errors: structuredAnswer ? [] : ["MODEL_STRUCTURED_REPORT_MISSING"],
+      });
+
+      if (structuredAnswer) {
+        const checked = validateStructuredDeepReport({
+          answer: structuredAnswer,
+          evidence: prompt.evidence,
+        });
+
+        if (checked.ok) {
+          validation = validationSummary({ ok: true });
+        } else {
+          validation = validationSummary({ ok: false, errors: checked.errors });
+          structuredAnswer = null;
+        }
+      }
+
+      if (!structuredAnswer) {
+        const repaired = await client.responses.parse({
+          model,
+          instructions: prompt.compilation.instructions,
+          input: [
+            {
+              role: "user",
+              content: [
+                {
+                  type: "input_text",
+                  text: JSON.stringify({
+                    task: "repair_structured_deep_report",
+                    originalPayload: prompt.compilation.userPayloadText,
+                    validationErrors: validation.errors,
+                    allowedEvidenceIds: prompt.evidence.allowedEvidenceIds,
+                    previousOutput: (response.output_text ?? "").slice(0, 12000),
+                    instruction: "只修复结构、证据引用、报告深度和安全问题，不得增加证据包之外的新事实。",
+                  }),
+                },
+              ],
+            },
+          ],
+          text: {
+            format: zodTextFormat(deepReportAnswerSchema, "xuanji_deep_report_repair"),
+          },
+          max_output_tokens: inputSnapshot.productCode === "yearly_report" ? 3200 : 2400,
+          prompt_cache_key: `xuanji:deep-report-repair:${prompt.compilation.metadataBase.prompt.promptReleaseId}`,
+          safety_identifier: prompt.compilation.safetyIdentifier,
+          store: false,
+        });
+        tokensIn += repaired.usage?.input_tokens ?? 0;
+        tokensOut += repaired.usage?.output_tokens ?? 0;
+        const repairedAnswer = repaired.output_parsed;
+
+        if (repairedAnswer) {
+          const rechecked = validateStructuredDeepReport({
+            answer: repairedAnswer,
+            evidence: prompt.evidence,
+          });
+
+          if (rechecked.ok) {
+            structuredAnswer = repairedAnswer;
+            validation = validationSummary({ ok: true, repaired: true, repairAttempts: 1 });
+          } else {
+            validation = validationSummary({
+              ok: false,
+              errors: [...validation.errors, ...rechecked.errors].slice(0, 8),
+              repaired: true,
+              repairAttempts: 1,
+              degraded: true,
+            });
+          }
+        } else {
+          validation = validationSummary({
+            ok: false,
+            errors: [...validation.errors, "REPAIRED_STRUCTURED_REPORT_MISSING"].slice(0, 8),
+            repaired: true,
+            repairAttempts: 1,
+            degraded: true,
+          });
+        }
+      }
+
+      if (!structuredAnswer) {
+        structuredAnswer = buildDeterministicDeepReport({
+          title: local.title,
+          summary: local.summary,
+          content: local.content,
+          evidence: prompt.evidence,
+          reason: "MODEL_OUTPUT_VALIDATION_FAILED",
+        });
+        validation = validationSummary({
+          ok: true,
+          errors: validation.errors,
+          repaired: validation.repaired,
+          repairAttempts: validation.repairAttempts,
+          degraded: true,
+        });
+      }
+
+      const content = renderDeepReportAnswer(structuredAnswer, prompt.evidence);
+      tokensIn = tokensIn || estimateTokens(inputSnapshot.profileMemory);
+      tokensOut = tokensOut || estimateTokens(content);
       const costEstimate = estimateOpenAiCostCents({ model, tokensIn, tokensOut });
+      const promptMetadata = buildDeepReportPromptRunMetadata({
+        compilation: prompt.compilation,
+        validation,
+      });
       const usageLog = await createUsageLog({
         userId: input.userId,
         provider: "openai",
@@ -197,13 +438,21 @@ export async function buildPaidDeepReport(input: {
         tokensIn,
         tokensOut,
         costCents: costEstimate?.costCents,
+        idempotencyKey: input.usageIdempotencyKey,
         metadata: {
-          orderId: input.orderId,
-          paymentSource: input.entitlement?.paymentSource,
-          entitlementKind: input.entitlement?.entitlementKind,
-          productCode: input.productCode,
+          orderId: inputSnapshot.orderId,
+          paymentSource: inputSnapshot.paymentSource,
+          entitlementKind: inputSnapshot.entitlementKind,
+          productCode: inputSnapshot.productCode,
           reportType: local.type,
-          fallback: false,
+          fallback: validation.degraded,
+          promptMetadata,
+          validation,
+          evidence: {
+            evidencePackageId: prompt.evidence.evidencePackageId,
+            evidenceCount: prompt.evidence.items.length,
+            factDigest: prompt.evidence.factDigest,
+          },
           ...buildAiCostMetadata(costEstimate),
         },
       });
@@ -215,9 +464,12 @@ export async function buildPaidDeepReport(input: {
         content,
         inputSnapshot,
         toolResults: {
-          ...local.toolResults,
-          analyzer: "openai_deep_report_v1",
+          ...asObjectRecord(local.toolResults),
+          analyzer: "openai_deep_report_v2",
           usageLogId: usageLog.id,
+          structuredReport: structuredAnswer,
+          promptMetadata,
+          validation,
         },
         modelUsed: model,
         costTokens: tokensIn + tokensOut,
@@ -226,13 +478,30 @@ export async function buildPaidDeepReport(input: {
     } catch (error) {
       if (process.env.NODE_ENV !== "production") {
         const message = error instanceof Error ? error.message.split("\n")[0] : String(error);
-        console.warn(`OpenAI deep report failed; using local fallback. ${message}`);
+        console.warn(`OpenAI deep report failed; using deterministic fallback. ${message}`);
       }
     }
   }
 
-  const tokensIn = estimateTokens(profileMemory);
-  const tokensOut = estimateTokens(local.content);
+  const fallbackAnswer = buildDeterministicDeepReport({
+    title: local.title,
+    summary: local.summary,
+    content: local.content,
+    evidence: prompt.evidence,
+    reason: client ? "MODEL_GENERATION_FAILED" : "MODEL_PROVIDER_UNAVAILABLE",
+  });
+  const fallbackValidation = validationSummary({
+    ok: true,
+    degraded: true,
+    errors: client ? ["MODEL_GENERATION_FAILED"] : ["MODEL_PROVIDER_UNAVAILABLE"],
+  });
+  const promptMetadata = buildDeepReportPromptRunMetadata({
+    compilation: prompt.compilation,
+    validation: fallbackValidation,
+  });
+  const fallbackContent = renderDeepReportAnswer(fallbackAnswer, prompt.evidence);
+  const tokensIn = estimateTokens(inputSnapshot.profileMemory);
+  const tokensOut = estimateTokens(fallbackContent);
   const usageLog = await createUsageLog({
     userId: input.userId,
     provider: "local",
@@ -241,13 +510,21 @@ export async function buildPaidDeepReport(input: {
     tokensIn,
     tokensOut,
     costCents: 0,
+    idempotencyKey: input.usageIdempotencyKey,
     metadata: {
-      orderId: input.orderId,
-      paymentSource: input.entitlement?.paymentSource,
-      entitlementKind: input.entitlement?.entitlementKind,
-      productCode: input.productCode,
+      orderId: inputSnapshot.orderId,
+      paymentSource: inputSnapshot.paymentSource,
+      entitlementKind: inputSnapshot.entitlementKind,
+      productCode: inputSnapshot.productCode,
       reportType: local.type,
       fallback: true,
+      promptMetadata,
+      validation: fallbackValidation,
+      evidence: {
+        evidencePackageId: prompt.evidence.evidencePackageId,
+        evidenceCount: prompt.evidence.items.length,
+        factDigest: prompt.evidence.factDigest,
+      },
       costCurrency: "CNY",
       estimatedCost: false,
       costSource: "local_no_model_cost",
@@ -258,11 +535,14 @@ export async function buildPaidDeepReport(input: {
     type: local.type,
     title: local.title,
     summary: local.summary,
-    content: local.content,
+    content: fallbackContent,
     inputSnapshot,
     toolResults: {
-      ...local.toolResults,
+      ...asObjectRecord(local.toolResults),
       usageLogId: usageLog.id,
+      structuredReport: fallbackAnswer,
+      promptMetadata,
+      validation: fallbackValidation,
     },
     modelUsed: "local-deep-report",
     costTokens: tokensIn + tokensOut,

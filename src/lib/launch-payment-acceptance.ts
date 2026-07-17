@@ -456,8 +456,12 @@ function buildChannel(input: {
   orders: MockOrder[];
   walletTransactions: MockWalletTransaction[];
   evidenceRecords: LaunchPaymentAcceptanceEvidenceRecord[];
+  paymentMode: string;
 }) {
   const status = getLivePaymentStatus(input.id);
+  const paymentModeDeferred = input.paymentMode !== "live";
+  const statusForMode = (value: HealthStatus): HealthStatus =>
+    paymentModeDeferred && value === "blocking" ? "warning" : value;
   const channelOrders = input.orders.filter((order) => order.provider === input.provider);
   const channelEvidenceRecords = input.evidenceRecords.filter(
     (record) => record.metadata.channel === input.id,
@@ -482,7 +486,7 @@ function buildChannel(input: {
       id: `${input.id}:config`,
       group: input.label,
       title: "商户参数与开关",
-      status: configured ? "ready" : status.enabled ? "blocking" : "warning",
+      status: statusForMode(configured ? "ready" : status.enabled ? "blocking" : "warning"),
       detail: configured
         ? `${input.label}已开启且核心商户参数完整。`
         : status.enabled
@@ -499,7 +503,7 @@ function buildChannel(input: {
       id: `${input.id}:order-created`,
       group: input.label,
       title: "小额真实订单创建",
-      status: latestOrder ? "ready" : configured ? "blocking" : "warning",
+      status: statusForMode(latestOrder ? "ready" : configured ? "blocking" : "warning"),
       detail: latestOrder
         ? `最近订单 ${latestOrder.id}，${latestOrder.productName}，${formatPrice(
             latestOrder.amountCents,
@@ -515,13 +519,15 @@ function buildChannel(input: {
       id: `${input.id}:paid-callback`,
       group: input.label,
       title: "异步回调验签与支付成功",
-      status: latestPaidOrder
-        ? paidWithProviderTradeNo
-          ? "ready"
-          : "warning"
-        : configured
-          ? "blocking"
-          : "warning",
+      status: statusForMode(
+        latestPaidOrder
+          ? paidWithProviderTradeNo
+            ? "ready"
+            : "warning"
+          : configured
+            ? "blocking"
+            : "warning",
+      ),
       detail: latestPaidOrder
         ? paidWithProviderTradeNo
           ? `最近支付成功订单 ${latestPaidOrder.id}，平台交易号 ${latestPaidOrder.providerOrderId}。`
@@ -538,15 +544,17 @@ function buildChannel(input: {
       id: `${input.id}:entitlement`,
       group: input.label,
       title: "权益与星力到账",
-      status: latestPaidOrder
-        ? entitlementReady
-          ? entitlementExpected
-            ? "ready"
-            : "warning"
-          : "blocking"
-        : configured
-          ? "blocking"
-          : "warning",
+      status: statusForMode(
+        latestPaidOrder
+          ? entitlementReady
+            ? entitlementExpected
+              ? "ready"
+              : "warning"
+            : "blocking"
+          : configured
+            ? "blocking"
+            : "warning",
+      ),
       detail: latestPaidOrder
         ? entitlementExpected
           ? entitlementTransaction
@@ -567,7 +575,7 @@ function buildChannel(input: {
       id: `${input.id}:reconciliation`,
       group: input.label,
       title: "金额、交易号和对账留证",
-      status:
+      status: statusForMode(
         latestPaidOrder && paidWithProviderTradeNo && entitlementReady
           ? "ready"
           : latestPaidOrder
@@ -575,6 +583,7 @@ function buildChannel(input: {
             : configured
               ? "blocking"
               : "warning",
+      ),
       detail:
         latestPaidOrder && paidWithProviderTradeNo
           ? `${formatPrice(latestPaidOrder.amountCents, latestPaidOrder.currency)} 可用 ${latestPaidOrder.providerOrderId} 对账。`
@@ -589,13 +598,15 @@ function buildChannel(input: {
       id: `${input.id}:evidence-archive`,
       group: input.label,
       title: "小额验收证据快照",
-      status: latestEvidence
-        ? latestEvidence.metadata.status
-        : latestPaidOrder && paidWithProviderTradeNo && entitlementReady
-          ? "warning"
-          : configured
-            ? "blocking"
-            : "warning",
+      status: statusForMode(
+        latestEvidence
+          ? latestEvidence.metadata.status
+          : latestPaidOrder && paidWithProviderTradeNo && entitlementReady
+            ? "warning"
+            : configured
+              ? "blocking"
+              : "warning",
+      ),
       detail: latestEvidence
         ? `最近证据 ${latestEvidence.id}，${latestEvidence.metadata.status}，订单 ${latestEvidence.metadata.orderId ?? "未填"}，${latestEvidence.metadata.savedAt.slice(0, 16).replace("T", " ")}。`
         : "还没有保存该渠道的小额订单验收证据快照。",
@@ -757,6 +768,7 @@ export async function getLaunchPaymentAcceptance() {
       orders,
       walletTransactions,
       evidenceRecords,
+      paymentMode,
     }),
   );
   const items = [

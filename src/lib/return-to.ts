@@ -1,4 +1,4 @@
-const defaultReturnTo = "/member";
+const defaultReturnTo = "/chat";
 const localOrigin = "https://xuanji.local";
 
 function hasControlCharacter(value: string) {

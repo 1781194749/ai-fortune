@@ -265,6 +265,15 @@ function readProjectFile(root, filename) {
 
   return readFileSync(absolutePath, "utf8");
 }
+function readAdminHealthContent(root) {
+  return [
+    readProjectFile(root, "src/app/admin/health/page.tsx"),
+    readProjectFile(root, "src/app/admin/health/full/page.tsx"),
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 
 function safeBase64(value) {
   return Buffer.from(value).toString("base64url");
@@ -402,25 +411,27 @@ async function checkQiniu(result, env, timeoutMs) {
   const publicDomain = value(env, "QINIU_PUBLIC_DOMAIN");
   const publicDomainReady =
     hasRealValue(env, "QINIU_PUBLIC_DOMAIN") && normalizeBaseUrl(publicDomain).startsWith("https://");
+  const deferredAction =
+    "七牛云等待线上域名/资质时不阻断非支付版本上线；资质完成后补齐变量、CORS 和公开域名再复跑。";
 
   addCheck(result, {
     id: "qiniu-core-vars",
     group: "七牛",
     label: "七牛核心变量",
-    status: missing.length === 0 ? statuses.ready : statuses.blocking,
+    status: missing.length === 0 ? statuses.ready : statuses.warning,
     detail: missing.length === 0 ? "AK/SK、bucket 和公开域名均已配置。" : `缺少 ${missing.join(", ")}`,
     action:
       missing.length === 0
         ? "继续生成上传 token 并检查上传域名。"
-        : "补齐 QINIU_ACCESS_KEY、QINIU_SECRET_KEY、QINIU_BUCKET 和 QINIU_PUBLIC_DOMAIN。",
+        : deferredAction,
   });
   addCheck(result, {
     id: "qiniu-public-domain",
     group: "七牛",
     label: "七牛公开域名",
-    status: publicDomainReady ? statuses.ready : statuses.blocking,
+    status: publicDomainReady ? statuses.ready : statuses.warning,
     detail: publicDomainReady ? normalizeBaseUrl(publicDomain) : "未配置 HTTPS 公开域名或仍是占位值。",
-    action: publicDomainReady ? "确认该域名已配置 HTTPS 和 CORS。" : "绑定七牛公开 HTTPS 域名后再做手相图片验收。",
+    action: publicDomainReady ? "确认该域名已配置 HTTPS 和 CORS。" : deferredAction,
   });
 
   if (missing.length > 0 || !publicDomainReady) {
@@ -433,9 +444,12 @@ async function checkQiniu(result, env, timeoutMs) {
     id: "qiniu-upload-token",
     group: "七牛",
     label: "七牛上传 token",
-    status: token.tokenLength > 80 ? statuses.ready : statuses.blocking,
+    status: token.tokenLength > 80 ? statuses.ready : statuses.warning,
     detail: `已生成 token，长度 ${token.tokenLength}，有效期 ${token.expiresAt}。`,
-    action: "不要保存 token 原文；继续检查上传域名和公开域名可达性。",
+    action:
+      token.tokenLength > 80
+        ? "不要保存 token 原文；继续检查上传域名和公开域名可达性。"
+        : deferredAction,
   });
 
   try {
@@ -446,18 +460,18 @@ async function checkQiniu(result, env, timeoutMs) {
       id: "qiniu-upload-host",
       group: "七牛",
       label: "七牛上传域名",
-      status: ready ? statuses.ready : statuses.blocking,
+      status: ready ? statuses.ready : statuses.warning,
       detail: `${token.uploadUrl} 返回 HTTP ${response.status}。`,
-      action: ready ? "继续浏览器真实上传手相样图。" : "检查 QINIU_REGION、上传域名和服务器出站网络。",
+      action: ready ? "继续浏览器真实上传手相样图。" : deferredAction,
     });
   } catch (error) {
     addCheck(result, {
       id: "qiniu-upload-host",
       group: "七牛",
       label: "七牛上传域名",
-      status: statuses.blocking,
+      status: statuses.warning,
       detail: readError(error),
-      action: "检查 QINIU_REGION、上传域名和服务器出站网络。",
+      action: deferredAction,
     });
   }
 
@@ -469,18 +483,18 @@ async function checkQiniu(result, env, timeoutMs) {
       id: "qiniu-public-domain-reachable",
       group: "七牛",
       label: "七牛公开域名可达",
-      status: reachable ? statuses.ready : statuses.blocking,
+      status: reachable ? statuses.ready : statuses.warning,
       detail: `公开域名返回 HTTP ${response.status}。`,
-      action: reachable ? "继续验证真实图片 URL 能被视觉模型读取。" : "检查七牛公开域名、HTTPS 证书和 CDN 配置。",
+      action: reachable ? "继续验证真实图片 URL 能被视觉模型读取。" : deferredAction,
     });
   } catch (error) {
     addCheck(result, {
       id: "qiniu-public-domain-reachable",
       group: "七牛",
       label: "七牛公开域名可达",
-      status: statuses.blocking,
+      status: statuses.warning,
       detail: readError(error),
-      action: "检查七牛公开域名、HTTPS 证书和 CDN 配置。",
+      action: deferredAction,
     });
   }
 }
@@ -500,7 +514,7 @@ function validateAiStoragePlanWiring(result) {
   const root = process.cwd();
   const aiStoragePlan = readProjectFile(root, "src/lib/launch-ai-storage-plan.ts");
   const apiRoute = readProjectFile(root, "src/app/api/admin/launch/ai-storage-plan/route.ts");
-  const healthPage = readProjectFile(root, "src/app/admin/health/page.tsx");
+  const healthPage = readAdminHealthContent(root);
   const evidenceForm = readProjectFile(
     root,
     "src/app/admin/launch-ai-storage-acceptance-evidence-form.tsx",

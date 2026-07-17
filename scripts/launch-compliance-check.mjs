@@ -227,6 +227,15 @@ function readProjectFile(root, filename) {
 
   return readFileSync(absolutePath, "utf8");
 }
+function readAdminHealthContent(root) {
+  return [
+    readProjectFile(root, "src/app/admin/health/page.tsx"),
+    readProjectFile(root, "src/app/admin/health/full/page.tsx"),
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 
 function readError(error) {
   if (error instanceof Error) {
@@ -415,7 +424,7 @@ function checkCompliancePlanWiring(result) {
     root,
     "src/app/api/admin/launch/compliance-plan/route.ts",
   );
-  const healthPage = readProjectFile(root, "src/app/admin/health/page.tsx");
+  const healthPage = readAdminHealthContent(root);
   const missingItemIds = complianceItemIds.filter((itemId) => !compliance.includes(`id: "${itemId}"`));
   const missingStepIds = compliancePlanStepIds.filter(
     (stepId) => !compliancePlan.includes(`id: "${stepId}"`),

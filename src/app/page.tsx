@@ -33,8 +33,8 @@ export default async function Home() {
         isAdminUserId(session.userId),
       ])
     : [null, false];
-  const startHref = session ? "/chat" : "/onboarding";
-  const startLabel = session ? "继续问事" : "开始起盘";
+  const startHref = session ? "/chat" : createLoginHref("/chat");
+  const startLabel = session ? "继续问事" : "开始问事";
   const accountHref = session ? "/member" : createLoginHref("/member");
   const inviteLoginHref = createLoginHref("/member/invite");
 

@@ -1,5 +1,5 @@
 import { recordAdminAudit } from "@/lib/admin-audit";
-import { canAccessAdmin } from "@/lib/admin-auth";
+import { canAccessAdminRequest } from "@/lib/admin-request";
 import { normalizeChannelSource } from "@/lib/channel-source";
 import { saveChannelBudgetConfig } from "@/lib/channel-budget-config";
 
@@ -24,9 +24,7 @@ function parseOptionalDate(value: unknown) {
 }
 
 export async function PATCH(request: Request) {
-  const url = new URL(request.url);
-
-  if (!(await canAccessAdmin(Object.fromEntries(url.searchParams)))) {
+  if (!(await canAccessAdminRequest(request))) {
     return Response.json({ ok: false, message: "无权访问后台。" }, { status: 404 });
   }
 

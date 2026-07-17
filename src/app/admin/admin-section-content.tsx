@@ -154,8 +154,8 @@ function reportStatusClass(status: string) {
 }
 
 function reportTypeLabel(type: string) {
-  if (type === "BAZI_WUXING") return "八字五行";
-  if (type === "BAGUA") return "八卦问事";
+  if (type === "BAZI_WUXING") return "八字命盘";
+  if (type === "BAGUA") return "六十四卦";
   if (type === "PALM") return "手相分析";
   if (type === "COMPOSITE") return "综合报告";
   if (type === "YEARLY") return "年度运势";
@@ -959,7 +959,10 @@ export function AdminAssets({ data, adminToken }: { data: AdminDashboardData; ad
 
       <div className="grid gap-6 xl:grid-cols-[0.8fr_1.2fr]">
         <Card className="shadow-xs ring-border/80">
-          <CardHeader className="border-b"><CardTitle>权益账户余额</CardTitle><CardDescription>深度报告与手相额度</CardDescription></CardHeader>
+          <CardHeader className="border-b">
+            <CardTitle>会员权益账本</CardTitle>
+            <CardDescription>额度余额与发放流水中的报告额度、手相额度和幂等键</CardDescription>
+          </CardHeader>
           <CardContent className="p-0">
             {data.entitlementAccounts.length > 0 ? (
               <Table>
@@ -979,7 +982,10 @@ export function AdminAssets({ data, adminToken }: { data: AdminDashboardData; ad
         </Card>
 
         <Card className="shadow-xs ring-border/80">
-          <CardHeader className="border-b"><CardTitle>会员权益流水</CardTitle><CardDescription>发放、消费、退回和人工调整</CardDescription></CardHeader>
+          <CardHeader className="border-b">
+            <CardTitle>会员权益流水</CardTitle>
+            <CardDescription>发放、消费、退回、人工调整额度和幂等键</CardDescription>
+          </CardHeader>
           <CardContent className="p-0">
             {data.entitlementTransactions.length > 0 ? (
               <Table>

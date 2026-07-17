@@ -5,13 +5,17 @@ import {
   EntitlementEventType,
   EntitlementKind,
 } from "@/generated/prisma/enums";
+import type { Prisma } from "@/generated/prisma/client";
 import {
   getProduct,
   membershipProducts,
   type ProductCode,
 } from "@/lib/commerce";
-import { tryPrisma } from "@/lib/prisma";
+import { assertDatabaseFallbackAllowed, tryPrisma } from "@/lib/prisma";
+import type { PrismaClientInstance } from "@/lib/prisma";
 import { ensureDbUser } from "@/lib/user-store";
+
+type EntitlementDb = Prisma.TransactionClient | PrismaClientInstance;
 
 export type MemberEntitlementKind = "deep_report" | "palm_reading";
 
@@ -118,6 +122,14 @@ const state =
 
 if (!globalThis.xuanjiEntitlementState) {
   globalThis.xuanjiEntitlementState = state;
+}
+
+function requireEntitlementDatabaseWrite() {
+  assertDatabaseFallbackAllowed("PostgreSQL 暂时不可用，会员权益账本未变更。");
+}
+
+function requireEntitlementDatabaseRead() {
+  assertDatabaseFallbackAllowed("PostgreSQL 暂时不可用，无法读取会员权益账本。");
 }
 
 function createEntitlementAccountId() {
@@ -383,83 +395,10 @@ async function createDbEntitlementTransaction(input: {
   metadata?: unknown;
 }) {
   return tryPrisma(async (prisma) => {
-    await ensureDbUser(prisma, { userId: input.userId });
-
     try {
-      return await prisma.$transaction(async (tx) => {
-        if (input.idempotencyKey) {
-          const existing = await tx.entitlementTransaction.findUnique({
-            where: { idempotencyKey: input.idempotencyKey },
-          });
-
-          if (existing) {
-            return {
-              ok: true as const,
-              transaction: mapDbEntitlementTransaction(existing),
-            };
-          }
-        }
-
-        const dbKind = toDbKind(input.kind);
-        const account = await tx.entitlementAccount.upsert({
-          where: {
-            userId_kind: {
-              userId: input.userId,
-              kind: dbKind,
-            },
-          },
-          update: {},
-          create: {
-            id: createEntitlementAccountId(),
-            userId: input.userId,
-            kind: dbKind,
-            balance: 0,
-          },
-        });
-        const updated = input.amount < 0
-          ? await tx.entitlementAccount.updateMany({
-              where: { id: account.id, balance: { gte: Math.abs(input.amount) } },
-              data: { balance: { increment: input.amount } },
-            })
-          : await tx.entitlementAccount.updateMany({
-              where: { id: account.id },
-              data: { balance: { increment: input.amount } },
-            });
-
-        if (updated.count === 0) {
-          const current = await tx.entitlementAccount.findUnique({ where: { id: account.id } });
-          return {
-            ok: false as const,
-            reason: "INSUFFICIENT_ENTITLEMENT" as const,
-            balanceAfter: current?.balance ?? 0,
-          };
-        }
-
-        const updatedAccount = await tx.entitlementAccount.findUniqueOrThrow({
-          where: { id: account.id },
-        });
-        const transaction = await tx.entitlementTransaction.create({
-          data: {
-            id: createEntitlementTransactionId(),
-            accountId: account.id,
-            userId: input.userId,
-            kind: dbKind,
-            type: toDbEventType(input.type),
-            amount: input.amount,
-            balanceAfter: updatedAccount.balance,
-            reason: input.reason,
-            orderId: input.orderId,
-            reportId: input.reportId,
-            idempotencyKey: input.idempotencyKey,
-            metadata: toJsonValue(input.metadata),
-          },
-        });
-
-        return {
-          ok: true as const,
-          transaction: mapDbEntitlementTransaction(transaction),
-        };
-      });
+      return await prisma.$transaction((tx) =>
+        createDbEntitlementTransactionInTransaction(tx, input),
+      );
     } catch (error) {
       if (input.idempotencyKey && typeof error === "object" && error !== null && "code" in error && error.code === "P2002") {
         const existing = await prisma.entitlementTransaction.findUnique({
@@ -477,6 +416,96 @@ async function createDbEntitlementTransaction(input: {
       throw error;
     }
   });
+}
+
+async function createDbEntitlementTransactionInTransaction(
+  tx: EntitlementDb,
+  input: {
+    userId: string;
+    kind: MemberEntitlementKind;
+    type: MemberEntitlementEventType;
+    amount: number;
+    reason: string;
+    orderId?: string;
+    reportId?: string;
+    idempotencyKey?: string;
+    metadata?: unknown;
+  },
+): Promise<CreateEntitlementTransactionResult> {
+  await ensureDbUser(tx, { userId: input.userId });
+
+  if (input.idempotencyKey) {
+    const existing = await tx.entitlementTransaction.findUnique({
+      where: { idempotencyKey: input.idempotencyKey },
+    });
+
+    if (existing) {
+      return {
+        ok: true,
+        transaction: mapDbEntitlementTransaction(existing),
+      };
+    }
+  }
+
+  const dbKind = toDbKind(input.kind);
+  const account = await tx.entitlementAccount.upsert({
+    where: {
+      userId_kind: {
+        userId: input.userId,
+        kind: dbKind,
+      },
+    },
+    update: {},
+    create: {
+      id: createEntitlementAccountId(),
+      userId: input.userId,
+      kind: dbKind,
+      balance: 0,
+    },
+  });
+  const updated = input.amount < 0
+    ? await tx.entitlementAccount.updateMany({
+        where: { id: account.id, balance: { gte: Math.abs(input.amount) } },
+        data: { balance: { increment: input.amount } },
+      })
+    : await tx.entitlementAccount.updateMany({
+        where: { id: account.id },
+        data: { balance: { increment: input.amount } },
+      });
+
+  if (updated.count === 0) {
+    const current = await tx.entitlementAccount.findUnique({ where: { id: account.id } });
+    return {
+      ok: false,
+      reason: "INSUFFICIENT_ENTITLEMENT",
+      balanceAfter: current?.balance ?? 0,
+    };
+  }
+
+  const updatedAccount = await tx.entitlementAccount.findUniqueOrThrow({
+    where: { id: account.id },
+  });
+  const transaction = await tx.entitlementTransaction.create({
+    data: {
+      id: createEntitlementTransactionId(),
+      accountId: account.id,
+      userId: input.userId,
+      kind: dbKind,
+      type: toDbEventType(input.type),
+      amount: input.amount,
+      balanceAfter: updatedAccount.balance,
+      reason: input.reason,
+      orderId: input.orderId,
+      reportId: input.reportId,
+      idempotencyKey: input.idempotencyKey,
+      metadata: toJsonValue(input.metadata),
+    },
+  });
+
+  return {
+    ok: true,
+    transaction: mapDbEntitlementTransaction(transaction),
+  };
 }
 
 function createMemoryEntitlementTransaction(input: {
@@ -555,9 +584,7 @@ async function createEntitlementTransaction(input: {
     return dbResult.value;
   }
 
-  if (process.env.DATABASE_URL) {
-    throw new Error("PostgreSQL 暂时不可用，会员权益账本未变更。");
-  }
+  requireEntitlementDatabaseWrite();
 
   return createMemoryEntitlementTransaction(input);
 }
@@ -612,8 +639,8 @@ export async function revokeMembershipEntitlementsForOrder(input: {
     };
   }
 
-  if (!existingResult.ok && process.env.DATABASE_URL) {
-    throw new Error("PostgreSQL 暂时不可用，退款权益未回滚。");
+  if (!existingResult.ok) {
+    requireEntitlementDatabaseWrite();
   }
 
   const plan = await checkMembershipEntitlementsCanBeRevokedForOrder({
@@ -696,24 +723,34 @@ export async function syncMembershipEntitlementsFromPaidOrders(input: {
 }
 
 export async function getStoredMemberEntitlementSummary(userId: string) {
-  const dbResult = await tryPrisma(async (prisma) => {
-    const transactions = await prisma.entitlementTransaction.findMany({
-      where: { userId },
-      orderBy: { createdAt: "asc" },
-    });
-
-    return transactions.map(mapDbEntitlementTransaction);
-  });
+  const dbResult = await tryPrisma((prisma) =>
+    getStoredMemberEntitlementSummaryInTransaction(prisma, userId),
+  );
 
   if (dbResult.ok) {
-    return dbResult.value.length > 0 ? summarizeTransactions(dbResult.value) : null;
+    return dbResult.value;
   }
+
+  requireEntitlementDatabaseRead();
 
   const transactions = state.transactions
     .filter((transaction) => transaction.userId === userId)
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 
   return transactions.length > 0 ? summarizeTransactions(transactions) : null;
+}
+
+export async function getStoredMemberEntitlementSummaryInTransaction(
+  tx: EntitlementDb,
+  userId: string,
+) {
+  const transactions = await tx.entitlementTransaction.findMany({
+    where: { userId },
+    orderBy: { createdAt: "asc" },
+  });
+  const mapped = transactions.map(mapDbEntitlementTransaction);
+
+  return mapped.length > 0 ? summarizeTransactions(mapped) : null;
 }
 
 export async function getAdminEntitlementAccounts(input: { take?: number } = {}) {
@@ -730,6 +767,8 @@ export async function getAdminEntitlementAccounts(input: { take?: number } = {})
   if (dbResult.ok) {
     return dbResult.value;
   }
+
+  requireEntitlementDatabaseRead();
 
   return getMemoryEntitlementAccounts()
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
@@ -750,6 +789,8 @@ export async function getAdminEntitlementTransactions(input: { take?: number } =
   if (dbResult.ok) {
     return dbResult.value;
   }
+
+  requireEntitlementDatabaseRead();
 
   return state.transactions
     .slice()
@@ -776,6 +817,8 @@ export async function getUserEntitlementTransactions(
   if (dbResult.ok) {
     return dbResult.value;
   }
+
+  requireEntitlementDatabaseRead();
 
   return state.transactions
     .filter((transaction) => transaction.userId === userId)
@@ -830,6 +873,66 @@ export async function spendMemberEntitlement(input: {
 
   const summary = await getStoredMemberEntitlementSummary(input.userId);
   const balance = summary?.balances.find((item) => item.kind === input.kind) ??
+    createEmptyBalance(input.kind);
+
+  return {
+    ok: true as const,
+    transaction: result.transaction,
+    balance,
+  };
+}
+
+export async function spendMemberEntitlementInTransaction(
+  tx: EntitlementDb,
+  input: {
+    userId: string;
+    kind: MemberEntitlementKind;
+    amount?: number;
+    reportId?: string;
+    reason: string;
+    idempotencyKey?: string;
+    metadata?: unknown;
+  },
+) {
+  const amount = input.amount ?? 1;
+
+  if (!Number.isInteger(amount) || amount <= 0) {
+    throw new Error("Entitlement spend amount must be a positive integer.");
+  }
+
+  const result = await createDbEntitlementTransactionInTransaction(tx, {
+    userId: input.userId,
+    kind: input.kind,
+    type: "SPEND",
+    amount: -amount,
+    reason: input.reason,
+    reportId: input.reportId,
+    idempotencyKey:
+      input.idempotencyKey ??
+      (input.reportId ? `spend:${input.kind}:${input.reportId}` : undefined),
+    metadata: {
+      paymentSource: "membership_quota",
+      source: "member_entitlement_usage",
+      ...((input.metadata && typeof input.metadata === "object") ? input.metadata : {}),
+    },
+  });
+
+  if (!result.ok) {
+    const summary = await getStoredMemberEntitlementSummaryInTransaction(tx, input.userId);
+    const balance =
+      summary?.balances.find((item) => item.kind === input.kind) ??
+      createEmptyBalance(input.kind);
+
+    return {
+      ok: false as const,
+      reason: result.reason,
+      balance,
+    };
+  }
+
+  const summary = await getStoredMemberEntitlementSummaryInTransaction(tx, input.userId);
+  const balance =
+    summary?.balances.find((item) => item.kind === input.kind) ??
     createEmptyBalance(input.kind);
 
   return {

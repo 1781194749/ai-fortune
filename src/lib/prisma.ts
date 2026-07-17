@@ -5,6 +5,16 @@ import { PrismaClient } from "@/generated/prisma/client";
 
 export type PrismaClientInstance = InstanceType<typeof PrismaClient>;
 
+export class DatabaseUnavailableError extends Error {
+  readonly code = "DATABASE_UNAVAILABLE";
+  readonly status = 503;
+
+  constructor(message = "PostgreSQL 暂时不可用，请稍后重试。") {
+    super(message);
+    this.name = "DatabaseUnavailableError";
+  }
+}
+
 type PrismaGlobal = {
   client?: PrismaClientInstance;
   unavailable?: boolean;
@@ -33,6 +43,31 @@ function getPrismaOperationTimeoutMs() {
 
 function createPrismaTimeoutError(timeoutMs: number) {
   return new Error(`Prisma operation timed out after ${timeoutMs}ms`);
+}
+
+export function isProductionDatabaseFallbackBlocked(
+  env: Record<string, string | undefined> = process.env,
+) {
+  return (
+    env.NODE_ENV === "production" &&
+    env.ALLOW_UNSAFE_PRODUCTION_DATABASE_FALLBACK !== "true"
+  );
+}
+
+export function assertDatabaseFallbackAllowed(message?: string) {
+  if (isProductionDatabaseFallbackBlocked()) {
+    throw new DatabaseUnavailableError(message);
+  }
+}
+
+export function isDatabaseUnavailableError(error: unknown): error is DatabaseUnavailableError {
+  return (
+    error instanceof DatabaseUnavailableError ||
+    (typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      error.code === "DATABASE_UNAVAILABLE")
+  );
 }
 
 function isPrismaConnectionError(error: unknown) {

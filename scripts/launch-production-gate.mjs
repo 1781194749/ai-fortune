@@ -77,6 +77,8 @@ function parseArgs(argv) {
     noFail: false,
     allowLocal: false,
     skipNetwork: false,
+    deferLivePayment: false,
+    deferQiniu: false,
     timeoutMs: defaultTimeoutMs,
   };
 
@@ -122,6 +124,16 @@ function parseArgs(argv) {
 
     if (arg === "--skip-network") {
       args.skipNetwork = true;
+      continue;
+    }
+
+    if (arg === "--defer-live-payment") {
+      args.deferLivePayment = true;
+      continue;
+    }
+
+    if (arg === "--defer-qiniu") {
+      args.deferQiniu = true;
     }
   }
 
@@ -212,7 +224,7 @@ function buildStepArgs(step, input) {
     args.push("--timeout-ms", String(input.timeoutMs));
   }
 
-  if (input.allowLocal && (step.id === "database" || step.id === "url")) {
+  if (input.allowLocal && (step.id === "preflight" || step.id === "database" || step.id === "url")) {
     args.push("--allow-local");
   }
 
@@ -280,6 +292,36 @@ async function runGate(input) {
 
   for (const step of gateSteps) {
     const commandArgs = buildStepArgs(step, input);
+
+    if (input.deferLivePayment && step.id === "payment") {
+      steps.push({
+        id: step.id,
+        label: step.label,
+        status: statuses.warning,
+        ok: true,
+        skipped: true,
+        deferred: true,
+        network: step.network,
+        command: [step.command, ...commandArgs].map(shellQuote).join(" "),
+        summary: {
+          ready: 0,
+          warning: 1,
+          blocking: 0,
+          total: 1,
+        },
+        blockingItems: [],
+        warningItems: [
+          {
+            id: "payment-deferred",
+            label: "真实支付已按本次目标延期",
+            detail: "当前检查只判断非真实支付核心上线标准，mock 支付可保留；真实收费上线前仍必须单独跑通该门禁。",
+            action: "资质完成后移除 --defer-live-payment，运行 npm run launch:payment-check 并完成小额真实订单闭环。",
+          },
+        ],
+        action: step.action,
+      });
+      continue;
+    }
 
     if (input.skipNetwork && step.network) {
       steps.push({
@@ -405,15 +447,19 @@ async function runGate(input) {
     { ready: 0, warning: 0, blocking: 0, total: 0 },
   );
   const ok = summary.blocking === 0 && steps.every((step) => step.ok || step.skipped);
-  const releaseReady = ok && !input.skipNetwork;
+  const coreReady = ok && !input.skipNetwork;
+  const releaseReady = coreReady && !input.deferLivePayment && !input.deferQiniu;
 
   return {
     ok,
+    coreReady,
     releaseReady,
     generatedAt: new Date().toISOString(),
     envFile: input.envFile,
     skipNetwork: input.skipNetwork,
     allowLocal: input.allowLocal,
+    deferLivePayment: input.deferLivePayment,
+    deferQiniu: input.deferQiniu,
     timeoutMs: input.timeoutMs,
     summary,
     detailSummary,
@@ -423,6 +469,16 @@ async function runGate(input) {
 
 function printTextReport(result) {
   console.log(`生产上线总门禁 env=${result.envFile || "process.env"}`);
+  if (result.deferLivePayment || result.deferQiniu) {
+    console.log(
+      `deferred=${[
+        result.deferLivePayment ? "live-payment" : undefined,
+        result.deferQiniu ? "qiniu" : undefined,
+      ]
+        .filter(Boolean)
+        .join(",")}`,
+    );
+  }
   console.log(
     `steps ready=${result.summary.ready} warning=${result.summary.warning} blocking=${result.summary.blocking} total=${result.summary.total}`,
   );
@@ -430,6 +486,9 @@ function printTextReport(result) {
     `checks ready=${result.detailSummary.ready} warning=${result.detailSummary.warning} blocking=${result.detailSummary.blocking} total=${result.detailSummary.total}`,
   );
   console.log(`releaseReady=${result.releaseReady ? "yes" : "no"}`);
+  if (result.deferLivePayment || result.deferQiniu) {
+    console.log(`coreReady=${result.coreReady ? "yes" : "no"}`);
+  }
   console.log("");
 
   for (const step of result.steps) {
@@ -464,6 +523,8 @@ function printTextReport(result) {
       ? result.summary.warning > 0
         ? "结论：无 BLOCK，可进入真实收费灰度复核；WARN 项需在上线证据里说明或补齐。"
         : "结论：生产门禁已全绿，可进入真实收费灰度或 release_ready 复核。"
+      : result.coreReady && (result.deferLivePayment || result.deferQiniu)
+        ? "结论：非真实支付/非七牛的核心上线口径已无 BLOCK；延期项必须在收费放量或七牛启用前单独闭环。"
       : "结论：暂不可宣布收费上线；先处理 BLOCK，随后复核 WARN 并重跑总门禁。",
   );
 }
@@ -487,6 +548,8 @@ const result = await runGate({
   envFile,
   allowLocal: args.allowLocal,
   skipNetwork: args.skipNetwork,
+  deferLivePayment: args.deferLivePayment,
+  deferQiniu: args.deferQiniu,
   timeoutMs: args.timeoutMs,
 });
 

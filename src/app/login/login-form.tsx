@@ -1,11 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
-import { ArrowRight, Gift, Mail, ShieldCheck } from "lucide-react";
+import { ArrowRight, Gift, ShieldCheck } from "lucide-react";
 import { sanitizeReturnTo } from "@/lib/return-to";
 
-type Step = "email" | "code";
 type PurchaseIntent = {
   name: string;
   priceLabel: string;
@@ -28,53 +26,57 @@ function GoogleLogo() {
 
 function returnToLabel(returnTo: string, purchaseIntent?: PurchaseIntent) {
   if (purchaseIntent) {
-    return `登录后继续购买${purchaseIntent.name}`;
+    return `使用 Google 继续购买${purchaseIntent.name}`;
   }
 
   if (returnTo.startsWith("/pricing")) {
-    return "登录后回到价格页";
+    return "使用 Google 回到价格页";
   }
 
   if (returnTo.startsWith("/reports/deep")) {
-    return "登录后继续购买报告";
+    return "使用 Google 继续购买报告";
   }
 
   if (returnTo.startsWith("/chat")) {
-    return "登录后继续问 AI";
+    return "使用 Google 继续问 AI";
   }
 
   if (returnTo.startsWith("/onboarding")) {
-    return "登录并开始起盘";
+    return "使用 Google 进入 Chat";
   }
 
   if (returnTo.startsWith("/admin")) {
-    return "登录并进入平台后台";
+    return "使用 Google 进入平台后台";
   }
 
-  return "登录并进入个人中心";
+  return "使用 Google 进入 Chat";
 }
 
 function initialMessage(returnTo: string, purchaseIntent?: PurchaseIntent) {
   if (returnTo.startsWith("/admin")) {
-    return "使用已授权的管理员邮箱登录。";
+    return "使用已授权的 Google 邮箱登录。";
   }
 
   if (returnTo.startsWith("/onboarding")) {
-    return "输入邮箱，验证后开始建立你的命理档案。";
+    return "使用 Google 邮箱确认账号后，直接进入 Chat 开始问事。";
   }
 
   return purchaseIntent
-    ? `输入邮箱，登录后继续购买${purchaseIntent.name}。`
-    : "输入邮箱，先进入开发期会员流程。";
+    ? `使用 Google 邮箱登录后，继续购买${purchaseIntent.name}。`
+    : "使用 Google 邮箱登录后，直接进入 Chat 开始问事。";
 }
 
 function googleErrorMessage(error?: string) {
   if (error === "callback_failed") {
-    return "Google 登录未完成，请重试或使用邮箱验证码。";
+    return "Google 登录未完成，请重试。";
   }
 
   if (error === "not_configured") {
-    return "Google 登录暂未配置，请使用邮箱验证码。";
+    return "Google 登录暂未配置，请先在环境变量中补齐 OAuth Client ID 和 Secret。";
+  }
+
+  if (error === "database_unavailable") {
+    return "生产数据库暂不可用，暂时无法完成登录。";
   }
 
   return undefined;
@@ -82,18 +84,18 @@ function googleErrorMessage(error?: string) {
 
 function inviteStatusMessage(inviteActive?: boolean, inviteError?: string) {
   if (inviteError === "invalid") {
-    return "邀请链接无效或已过期，可以继续使用邮箱验证码登录。";
+    return "邀请链接无效或已过期，可以继续使用 Google 邮箱登录。";
   }
 
   if (inviteActive) {
-    return "好友邀请礼包已锁定，完成新账号登录后自动到账。";
+    return "好友邀请礼包已锁定，完成 Google 登录后自动到账。";
   }
 
   return undefined;
 }
 
 export function LoginForm({
-  initialReturnTo = "/member",
+  initialReturnTo = "/chat",
   purchaseIntent,
   googleEnabled = false,
   googleError,
@@ -108,100 +110,42 @@ export function LoginForm({
   inviteError?: string;
 }) {
   const returnTo = sanitizeReturnTo(initialReturnTo);
-  const [step, setStep] = useState<Step>("email");
-  const [email, setEmail] = useState("");
-  const [code, setCode] = useState("");
-  const [devCode, setDevCode] = useState<string | null>(null);
-  const [message, setMessage] = useState(
+  const message =
     googleErrorMessage(googleError) ??
-      inviteStatusMessage(inviteActive, inviteError) ??
-      initialMessage(returnTo, purchaseIntent),
-  );
-  const [loading, setLoading] = useState(false);
-
-  async function requestCode() {
-    setLoading(true);
-    setMessage("正在生成验证码...");
-
-    const response = await fetch("/api/auth/email/request", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email }),
-    });
-    const data = (await response.json()) as {
-      ok: boolean;
-      message?: string;
-      devCode?: string;
-    };
-
-    setLoading(false);
-
-    if (!response.ok || !data.ok) {
-      setMessage(data.message ?? "验证码生成失败。");
-      return;
-    }
-
-    setStep("code");
-    setDevCode(data.devCode ?? null);
-    setMessage("验证码已生成。开发环境会直接展示验证码。");
-  }
-
-  async function verifyCode() {
-    setLoading(true);
-    setMessage("正在验证并创建会话...");
-
-    const response = await fetch("/api/auth/email/verify", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, code, returnTo }),
-    });
-    const data = (await response.json()) as {
-      ok: boolean;
-      message?: string;
-      redirectTo?: string;
-    };
-
-    setLoading(false);
-
-    if (!response.ok || !data.ok) {
-      setMessage(data.message ?? "登录失败。");
-      return;
-    }
-
-    window.location.assign(sanitizeReturnTo(data.redirectTo, returnTo));
-  }
+    inviteStatusMessage(inviteActive, inviteError) ??
+    initialMessage(returnTo, purchaseIntent);
+  const googleHref = `/api/auth/google?returnTo=${encodeURIComponent(returnTo)}`;
 
   return (
     <div className="rounded-lg border border-[#3a3023] bg-[#12100d] p-5 shadow-2xl shadow-black/30">
       <div className="flex items-center gap-3 border-b border-[#2f261a] pb-5">
         <span className="flex size-11 items-center justify-center rounded-lg border border-[#c8a15a]/50 bg-[#c8a15a]/10 text-[#f0d49a]">
-          <Mail size={21} aria-hidden="true" />
+          <GoogleLogo />
         </span>
         <div>
-          <p className="text-sm text-[#b9ad99]">邮箱验证码登录</p>
+          <p className="text-sm text-[#b9ad99]">Google 邮箱登录</p>
           <h1 className="font-ritual text-3xl text-[#fff7e8]">进入玄机 AI</h1>
         </div>
       </div>
 
       <div className="mt-6 space-y-4">
         {googleEnabled ? (
-          <>
-            <a
-              href={`/api/auth/google?returnTo=${encodeURIComponent(returnTo)}`}
-              className="group inline-flex h-12 w-full items-center justify-center gap-3 rounded-md border border-[#4b4031] bg-[#181611] px-5 font-semibold text-[#f5efe2] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition hover:border-[#c8a15a]/70 hover:bg-[#201c15] hover:text-white"
-            >
-              <span className="flex size-8 items-center justify-center rounded-full bg-white shadow-sm transition group-hover:scale-105">
-                <GoogleLogo />
-              </span>
-              <span>使用 Google 登录</span>
-            </a>
-            <div className="flex items-center gap-3 text-xs text-[#8f8371]">
-              <span className="h-px flex-1 bg-[#2f261a]" />
-              <span>或使用邮箱验证码</span>
-              <span className="h-px flex-1 bg-[#2f261a]" />
-            </div>
-          </>
-        ) : null}
+          <a
+            href={googleHref}
+            className="group inline-flex h-12 w-full items-center justify-center gap-3 rounded-md border border-[#4b4031] bg-[#181611] px-5 font-semibold text-[#f5efe2] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition hover:border-[#c8a15a]/70 hover:bg-[#201c15] hover:text-white"
+          >
+            <span className="flex size-8 items-center justify-center rounded-full bg-white shadow-sm transition group-hover:scale-105">
+              <GoogleLogo />
+            </span>
+            <span>{returnToLabel(returnTo, purchaseIntent)}</span>
+            <ArrowRight size={17} className="transition group-hover:translate-x-0.5" aria-hidden="true" />
+          </a>
+        ) : (
+          <div className="rounded-md border border-[#5d2b22] bg-[#160c09] p-4 text-sm leading-6 text-[#d8cab2]">
+            Google 登录尚未配置。上线前请设置 AUTH_GOOGLE_ENABLED、GOOGLE_CLIENT_ID 和
+            GOOGLE_CLIENT_SECRET。
+          </div>
+        )}
         {purchaseIntent ? (
           <div className="rounded-md border border-[#c8a15a]/45 bg-[#c8a15a]/10 p-4">
             <p className="text-sm font-semibold text-[#f0d49a]">
@@ -232,43 +176,10 @@ export function LoginForm({
               <div>
                 <p className="text-sm font-semibold text-[#8ad5bd]">好友邀请礼包</p>
                 <p className="mt-2 text-sm leading-6 text-[#d8cab2]">
-                  新账号完成登录后自动获得 30 星力和 1 份深度报告额度。
+                  新账号完成 Google 登录后自动获得 30 星力和 1 份深度报告额度。
                 </p>
               </div>
             </div>
-          </div>
-        ) : null}
-
-        <label className="block">
-          <span className="text-sm text-[#d8cab2]">邮箱</span>
-          <input
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            disabled={loading || step === "code"}
-            type="email"
-            placeholder="you@example.com"
-            className="mt-2 h-12 w-full rounded-md border border-[#3a3023] bg-[#080705] px-4 text-[#fff7e8] outline-none transition placeholder:text-[#6f6455] focus:border-[#c8a15a]"
-          />
-        </label>
-
-        {step === "code" ? (
-          <label className="block">
-            <span className="text-sm text-[#d8cab2]">验证码</span>
-            <input
-              value={code}
-              onChange={(event) => setCode(event.target.value)}
-              disabled={loading}
-              inputMode="numeric"
-              placeholder="6 位数字"
-              className="mt-2 h-12 w-full rounded-md border border-[#3a3023] bg-[#080705] px-4 text-[#fff7e8] outline-none transition placeholder:text-[#6f6455] focus:border-[#c8a15a]"
-            />
-          </label>
-        ) : null}
-
-        {devCode ? (
-          <div className="rounded-md border border-[#3c8b72]/40 bg-[#3c8b72]/10 p-3 text-sm text-[#d8cab2]">
-            开发环境验证码：<span className="font-semibold text-[#f0d49a]">{devCode}</span>
-            <span className="ml-2 text-[#9f927f]">也可输入 000000 快速登录</span>
           </div>
         ) : null}
 
@@ -285,21 +196,11 @@ export function LoginForm({
           </Link>
           。
         </p>
-
-        <button
-          type="button"
-          onClick={step === "email" ? requestCode : verifyCode}
-          disabled={loading}
-          className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-md bg-[#c8a15a] px-5 font-semibold text-[#130f09] transition hover:bg-[#f0d49a] disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {loading ? "处理中..." : step === "email" ? "获取验证码" : returnToLabel(returnTo, purchaseIntent)}
-          <ArrowRight size={18} aria-hidden="true" />
-        </button>
       </div>
 
       <div className="mt-6 flex gap-3 rounded-md border border-[#2f261a] bg-[#0b0906] p-3 text-sm leading-6 text-[#b9ad99]">
         <ShieldCheck className="mt-0.5 shrink-0 text-[#3c8b72]" size={18} />
-        邮箱验证码仅用于确认账号。我们只会在你授权的范围内保存账号与命理档案信息。
+        Google 登录仅用于确认账号邮箱。我们只会在你授权的范围内保存账号与命理档案信息。
       </div>
     </div>
   );

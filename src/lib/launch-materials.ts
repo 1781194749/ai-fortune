@@ -178,7 +178,7 @@ const templates = [
     ],
     outputs: ["微信开放平台 App ID", "App Secret", "授权回调配置"],
     envKeys: ["AUTH_WECHAT_ENABLED", "WECHAT_APP_ID", "WECHAT_APP_SECRET"],
-    verification: ["微信扫码登录能创建或恢复同一用户，邮箱登录仍可作为备选"],
+    verification: ["微信扫码登录能创建或恢复同一用户，Google 登录仍可作为主入口"],
   },
   {
     id: "alipay",

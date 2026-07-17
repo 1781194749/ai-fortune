@@ -3,7 +3,7 @@ export const brand = {
   en: "Xuanji AI",
   tagline: "看得见推演过程的 AI 命理顾问",
   description:
-    "塔罗、八字五行、八卦问事、手相解读与深度报告，一次生成你的专属命理档案。",
+    "塔罗、八字命盘、六十四卦问事、手相解读与深度报告，一次生成你的专属命理档案。",
 } as const;
 
 export const navItems = [
@@ -33,15 +33,15 @@ export const productModules = [
     accent: "border-[#c8a15a]/45 bg-[#c8a15a]/10",
   },
   {
-    title: "八字五行",
+    title: "八字命盘",
     eyebrow: "专业信任",
-    detail: "生日、时辰、出生地进入排盘工具，AI 负责解释和追问。",
+    detail: "生日、时辰、出生地进入四柱十神、大运流年和喜忌分析。",
     accent: "border-[#3c8b72]/45 bg-[#3c8b72]/10",
   },
   {
     title: "八卦问事",
     eyebrow: "低成本复购",
-    detail: "针对具体问题起卦、变卦、解卦，适合事业、关系和选择题。",
+    detail: "针对具体问题起六爻，展开本卦、变卦、互卦、错卦和综卦。",
     accent: "border-[#f0d49a]/40 bg-[#f0d49a]/10",
   },
   {
@@ -84,7 +84,7 @@ export const pricingPlans = [
 ] as const;
 
 export const systemPillars = [
-  "邮箱验证码优先，微信扫码登录预留",
+  "Google 邮箱登录优先，微信扫码登录预留",
   "支付宝与微信支付完整订单链路，开发期走 mock payment",
   "OpenAI Responses API 编排对话、图片与工具调用",
   "PostgreSQL + Prisma 保存会员档案、报告和星力流水",

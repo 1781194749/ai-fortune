@@ -257,7 +257,7 @@ const batchTemplates = [
     order: 70,
     title: "微信扫码登录",
     owner: "运营 / 技术",
-    goal: "让国内用户可用微信扫码登录，同时保留邮箱登录兜底。",
+    goal: "让国内用户可用微信扫码登录，同时保留 Google 登录主入口。",
     when: "微信开放平台网站应用审核通过后填写；第一版可后置。",
     keys: ["AUTH_WECHAT_ENABLED", "WECHAT_APP_ID", "WECHAT_APP_SECRET"],
     materialIds: ["wechat_open"],

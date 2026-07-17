@@ -1,5 +1,5 @@
 import { recordAdminAudit } from "@/lib/admin-audit";
-import { canAccessAdmin } from "@/lib/admin-auth";
+import { canAccessAdminRequest } from "@/lib/admin-request";
 import { getBasePromotionRules } from "@/lib/promo-code";
 import { savePromotionRuntimeConfig } from "@/lib/promotion-config";
 
@@ -31,9 +31,7 @@ export async function PATCH(
   request: Request,
   context: { params: Promise<{ code: string }> },
 ) {
-  const url = new URL(request.url);
-
-  if (!(await canAccessAdmin(Object.fromEntries(url.searchParams)))) {
+  if (!(await canAccessAdminRequest(request))) {
     return Response.json({ ok: false, message: "无权访问后台。" }, { status: 404 });
   }
 

@@ -1,9 +1,11 @@
 import "server-only";
 
+import { createOpenAI, type OpenAIProvider } from "@ai-sdk/openai";
 import OpenAI from "openai";
 
 declare global {
   var xuanjiOpenAIClient: OpenAI | undefined;
+  var xuanjiAiSdkOpenAIProvider: OpenAIProvider | undefined;
 }
 
 const defaultOpenAIBaseURL = "https://api.openai.com/v1";
@@ -36,6 +38,26 @@ export function getOpenAIClient() {
   }
 
   return globalThis.xuanjiOpenAIClient;
+}
+
+export function getAiSdkOpenAIProvider() {
+  const apiKey = process.env.OPENAI_API_KEY?.trim();
+
+  if (!apiKey) {
+    return null;
+  }
+
+  if (!globalThis.xuanjiAiSdkOpenAIProvider) {
+    globalThis.xuanjiAiSdkOpenAIProvider = createOpenAI({
+      apiKey,
+      baseURL: getOpenAIBaseURL(),
+      headers: {
+        "User-Agent": getOpenAIUserAgent(),
+      },
+    });
+  }
+
+  return globalThis.xuanjiAiSdkOpenAIProvider;
 }
 
 export function getDefaultOpenAIModel(env: OpenAIEnvironment = process.env) {

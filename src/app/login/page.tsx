@@ -56,6 +56,7 @@ export default async function LoginPage({
   const purchaseIntent = await getPurchaseIntent(returnTo);
   const onboardingIntent = returnTo.startsWith("/onboarding");
   const adminIntent = returnTo.startsWith("/admin");
+  const chatIntent = returnTo.startsWith("/chat") || onboardingIntent;
 
   return (
     <main className="min-h-screen bg-[#080705] px-5 py-8 text-[#f5efe2] sm:px-8">
@@ -83,29 +84,29 @@ export default async function LoginPage({
                 ? "好友邀请"
               : purchaseIntent
                 ? "购买前登录"
-                : onboardingIntent
-                  ? "起盘前登录"
-                  : "账号与个人中心"}
+                : chatIntent
+                  ? "进入 Chat 前登录"
+                  : "账号登录"}
           </p>
           <h2 className="mt-4 font-ritual text-5xl leading-tight text-[#fff7e8]">
             {adminIntent
               ? "登录平台后台"
               : purchaseIntent
               ? `登录后继续购买${purchaseIntent.name}`
-              : onboardingIntent
-                ? "先建立账号，再让玄机 AI 记住你"
+              : chatIntent
+                ? "登录后直接进入 Chat"
                 : "登录后继续你的推演"}
           </h2>
           <p className="mt-5 leading-8 text-[#b9ad99]">
             {adminIntent
               ? "平台后台与用户端共用账号体系。只有已授权管理员邮箱可以进入用户、订单、资产、报告和 AI 成本管理页面。"
               : inviteActive
-              ? "你的邀请礼包已经锁定。完成邮箱验证或 Google 登录后，新账号会自动收到星力和深度报告额度。"
+              ? "你的邀请礼包已经锁定。完成 Google 邮箱登录后，新账号会自动收到星力和深度报告额度。"
               : purchaseIntent
               ? "你的套餐选择会被保留，登录成功后将回到价格页确认权益并创建订单。"
-              : onboardingIntent
-                ? "验证邮箱后会进入轻量起盘流程。完成称呼、生辰、行业与关注方向后，就可以直接进入 Chat 问事。"
-                : "使用邮箱验证码登录。你的命理档案、对话、报告和会员权益会与账号同步保存。"}
+              : chatIntent
+                ? "使用 Google 邮箱确认账号后，会直接进入 Chat。档案可以在对话中逐步补充，不强制先填表。"
+                : "使用 Google 邮箱登录。你的命理档案、对话、报告和会员权益会与账号同步保存。"}
           </p>
         </div>
         <LoginForm

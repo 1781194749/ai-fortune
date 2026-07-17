@@ -32,6 +32,7 @@ export default async function PalmPage() {
       description="上传一张清晰的手掌图片，并告诉玄机你最关注的方向。图片会在获得授权后用于本次分析，结果会保存到你的报告中。"
       icon={Camera}
       accent="vermillion"
+      chatMethod="palm"
     >
       <PalmClient
         initialBalance={session.starBalance}

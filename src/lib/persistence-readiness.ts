@@ -4,6 +4,7 @@ import { randomUUID } from "crypto";
 import type { HealthStatus } from "@/lib/health-checks";
 import {
   getPrismaRuntimeState,
+  isDatabaseUnavailableError,
   retryPrismaConnection,
   tryPrisma,
 } from "@/lib/prisma";
@@ -191,7 +192,7 @@ function modeLabel(mode: UsageLogStoreMode) {
   }
 
   if (mode === "memory_fallback") {
-    return "数据库回退内存";
+    return "数据库不可用";
   }
 
   return "进程内存";
@@ -340,9 +341,9 @@ function buildReadiness(input: {
     status === "ready"
       ? "UsageLog 已完成 PostgreSQL 写入和读回验证，可支撑付费订单、会员档案、报告和运营审计恢复。"
       : !input.databaseConfigured
-        ? "当前未配置 DATABASE_URL，业务数据会回退到进程内存，服务重启后会丢失。"
+        ? "当前未配置 DATABASE_URL，仅适合开发演示；生产关键业务会阻断。"
         : input.storeMode !== "database"
-          ? "已配置 DATABASE_URL，但 Prisma 当前不可用，业务数据正在回退到进程内存。"
+          ? "已配置 DATABASE_URL，但 Prisma 当前不可用；生产关键业务已阻断，避免写入不可恢复的内存数据。"
           : lastProbeOk && featureCoverage.missingRequired > 0
             ? `数据库读写已通过，但还有 ${featureCoverage.missingRequired} 类上线关键事件没有 PostgreSQL 记录。`
           : "数据库可读，但还没有完成后台写入探针验收。";
@@ -386,7 +387,7 @@ function buildReadiness(input: {
         detail:
           input.storeMode === "database"
             ? "UsageLog 查询已走 PostgreSQL。"
-            : "当前请求未命中真实数据库持久化。",
+            : "当前请求未命中真实数据库持久化；生产关键业务不会继续内存降级。",
         status: input.storeMode === "database" ? "ready" : "blocking",
       },
       {
@@ -441,7 +442,16 @@ function readHeader(request: Request | undefined, name: string) {
 
 export async function getPersistenceReadiness() {
   const storeStatus = await getUsageLogStoreStatus(launchPersistenceFeatureIds);
-  const probeLogs = await getUsageLogsByFeature(persistenceProbeFeature, { take: 1 });
+  let probeLogs: UsageLogRecord[] = [];
+
+  try {
+    probeLogs = await getUsageLogsByFeature(persistenceProbeFeature, { take: 1 });
+  } catch (error) {
+    if (!isDatabaseUnavailableError(error)) {
+      throw error;
+    }
+  }
+
   const runtime = getPrismaRuntimeState();
   const storeMode =
     runtime.unavailable && storeStatus.databaseConfigured ? "memory_fallback" : storeStatus.mode;

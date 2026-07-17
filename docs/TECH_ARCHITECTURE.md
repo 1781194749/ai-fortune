@@ -138,9 +138,13 @@ WECHAT_PAY_ENABLED=true
 - `intent_classifier` 识别塔罗、八字、八卦、手相或通用问题。
 - `profile_reader` 读取 `FortuneProfile`，把出生信息、长期关注和五行摘要带入对话。
 - 后端先执行可确定工具，例如塔罗抽牌、八字五行排盘。
-- 配置 `OPENAI_API_KEY` 时调用 OpenAI Responses API 生成最终表达。
+- 工具结果先归一为 `ReadingEvidencePackage`；模型只能引用其中的 evidenceId，用户可见原始事实由后端渲染。
+- 配置 `OPENAI_API_KEY` 时调用 OpenAI Responses API 严格结构化输出；聊天使用 `FortuneAnswer`，付费报告使用独立 `DeepReportAnswer`。
+- 输入先经过领域安全规则和可选 Moderation，输出再经过事实、安全、状态和服务档位校验；修复最多一次，仍失败进入确定性降级。
+- Prompt Registry 实际选择稳定版或候选版，支持按 cohort 灰度和切回稳定版的真实回滚。
 - `/api/fortune/palm` 会优先使用 `OPENAI_VISION_MODEL` 调用视觉模型分析手相图片。
 - 未配置 OpenAI 或调用失败时使用本地降级回答，保证收费与演示链路不断。
+- `chat:quality-check` 每次运行核心编排样本与 1000 条以上确定性回归；正式灰度必须额外通过 `chat:quality-gate` 的真实模型语义评分和人工复核。
 - 每次调用写入 `UsageLog`，记录 provider、model、feature、tokens、估算 `costCents`、成本来源和工具元数据；生产可用 `OPENAI_DEFAULT_INPUT_CENTS_PER_1M_TOKENS` / `OPENAI_DEFAULT_OUTPUT_CENTS_PER_1M_TOKENS` 或模型级变量覆盖启动估算表。
 
 ## 图片存储

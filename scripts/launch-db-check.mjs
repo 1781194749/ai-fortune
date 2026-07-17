@@ -447,6 +447,15 @@ function readProjectFile(root, filename) {
 
   return readFileSync(absolutePath, "utf8");
 }
+function readAdminHealthContent(root) {
+  return [
+    readProjectFile(root, "src/app/admin/health/page.tsx"),
+    readProjectFile(root, "src/app/admin/health/full/page.tsx"),
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 
 function databasePlanApiUrl(baseUrl, env) {
   const url = new URL("/api/admin/launch/database-plan", baseUrl);
@@ -463,7 +472,7 @@ function validateDatabasePlanWiring(result) {
   const root = process.cwd();
   const databasePlan = readProjectFile(root, "src/lib/launch-database-plan.ts");
   const apiRoute = readProjectFile(root, "src/app/api/admin/launch/database-plan/route.ts");
-  const healthPage = readProjectFile(root, "src/app/admin/health/page.tsx");
+  const healthPage = readAdminHealthContent(root);
   const evidenceForm = readProjectFile(
     root,
     "src/app/admin/launch-database-acceptance-evidence-form.tsx",

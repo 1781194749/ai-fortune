@@ -157,11 +157,20 @@ function multipleLabel(value: number | undefined) {
   return `${value.toFixed(value >= 10 ? 0 : 1)}x`;
 }
 
-export default async function AdminHealthPage() {
-  const access = await getAdminAccess();
+export default async function AdminHealthPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const resolvedSearchParams = await searchParams;
+  const access = await getAdminAccess(resolvedSearchParams);
+
+  if (!access.enabled) {
+    notFound();
+  }
 
   if (!access.authenticated) {
-    redirect(createLoginHref("/admin/health/full", "/admin"));
+    redirect(createLoginHref("/admin/health", "/admin"));
   }
 
   if (!access.authorized) {
@@ -357,7 +366,7 @@ export default async function AdminHealthPage() {
     evidenceActionCenter: launchEvidenceActionCenter,
   });
   const summary = summarizeHealth(checks);
-  const adminToken = undefined;
+  const adminToken = access.adminToken;
   const currentOfflineReadinessItem = launchExternalReadiness.items.find(
     (item) => item.id === launchOfflineActionPack.currentAction.id,
   );

@@ -52,7 +52,7 @@ export type ProductRuntimeOverride = {
 
 export type MembershipTierCode = "FREE" | "TRIAL" | "MONTHLY" | "PRO" | "YEARLY";
 
-export const freeStarterStarGrant = 10;
+export const freeStarterStarGrant = 8;
 
 declare global {
   var xuanjiProductRuntimeConfigs: Map<string, ProductRuntimeOverride> | undefined;
@@ -69,7 +69,7 @@ export const membershipProducts = [
     durationDays: 7,
     reportQuota: 1,
     palmQuota: 1,
-    description: "适合低门槛试用，验证塔罗、手相和简版报告体验。",
+    description: "适合先用 7 天完整体验建档、轻问答、塔罗和手相浅析。",
   },
   {
     code: "monthly",
@@ -81,8 +81,8 @@ export const membershipProducts = [
     durationDays: 30,
     reportQuota: 2,
     palmQuota: 3,
-    highlighted: false,
-    description: "主推档位，覆盖基础 AI 对话、手相和简版报告。",
+    highlighted: true,
+    description: "适合一个月持续问事、手相复核、简版报告和基础档案记忆。",
   },
   {
     code: "pro_monthly",
@@ -94,20 +94,20 @@ export const membershipProducts = [
     durationDays: 30,
     reportQuota: 6,
     palmQuota: 10,
-    description: "面向高频和高信任用户，包含长期记忆和深度报告。",
+    description: "适合高频追问、长期记忆、深度报告和多次手相分析。",
   },
   {
     code: "yearly",
     type: "membership",
-    name: "关键阶段陪伴",
-    priceCents: 9900,
+    name: "年度会员",
+    priceCents: 39900,
     currency: "CNY",
-    starGrant: 1800,
-    durationDays: 30,
-    reportQuota: 10,
-    palmQuota: 16,
-    highlighted: true,
-    description: "围绕一个核心主题连续跟进 30 天，包含每周复盘与阶段总结。",
+    starGrant: 5400,
+    durationDays: 365,
+    reportQuota: 12,
+    palmQuota: 36,
+    highlighted: false,
+    description: "适合全年档案沉淀、年度运势、主题报告和长期陪伴。",
   },
 ] satisfies Product[];
 
@@ -131,7 +131,7 @@ export const oneTimeProducts = [
   {
     code: "bazi_detail",
     type: "one_time",
-    name: "八字五行详批",
+    name: "八字命盘详批",
     priceCents: 1990,
     currency: "CNY",
     description: "基于生日、时辰和出生地生成五行详批。",

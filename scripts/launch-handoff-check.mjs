@@ -144,6 +144,15 @@ function readProjectFile(root, filename) {
 
   return readFileSync(absolutePath, "utf8");
 }
+function readAdminHealthContent(root) {
+  return [
+    readProjectFile(root, "src/app/admin/health/page.tsx"),
+    readProjectFile(root, "src/app/admin/health/full/page.tsx"),
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 
 function readError(error) {
   if (error instanceof Error) {
@@ -264,7 +273,7 @@ function checkStaticWiring(result, root) {
   const workplan = readProjectFile(root, "src/lib/launch-workplan.ts");
   const handoffRoute = readProjectFile(root, "src/app/api/admin/launch/handoff/route.ts");
   const workplanRoute = readProjectFile(root, "src/app/api/admin/launch/workplan/route.ts");
-  const healthPage = readProjectFile(root, "src/app/admin/health/page.tsx");
+  const healthPage = readAdminHealthContent(root);
   const packageJson = readProjectFile(root, "package.json");
   const docs = [
     "README.md",

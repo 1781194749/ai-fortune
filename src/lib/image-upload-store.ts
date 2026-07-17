@@ -2,7 +2,7 @@ import "server-only";
 
 import { randomUUID } from "crypto";
 import { ImageKind } from "@/generated/prisma/enums";
-import { tryPrisma } from "@/lib/prisma";
+import { assertDatabaseFallbackAllowed, tryPrisma } from "@/lib/prisma";
 import { ensureDbUser } from "@/lib/user-store";
 
 export type ImageUploadRecord = {
@@ -39,6 +39,14 @@ const imageUploads = globalThis.xuanjiImageUploads ?? new Map<string, ImageUploa
 
 if (!globalThis.xuanjiImageUploads) {
   globalThis.xuanjiImageUploads = imageUploads;
+}
+
+function requireImageDatabaseRead() {
+  assertDatabaseFallbackAllowed("PostgreSQL 暂时不可用，无法读取图片记录。");
+}
+
+function requireImageDatabaseWrite() {
+  assertDatabaseFallbackAllowed("PostgreSQL 暂时不可用，图片记录未保存。");
 }
 
 function toJsonValue(value: unknown) {
@@ -99,6 +107,8 @@ export async function createPalmImageUpload(input: {
     return dbResult.value;
   }
 
+  requireImageDatabaseWrite();
+
   const image: ImageUploadRecord = {
     id: createImageId(),
     userId: input.userId,
@@ -125,6 +135,8 @@ export async function getPalmImageUpload(imageId: string) {
     return dbResult.value;
   }
 
+  requireImageDatabaseRead();
+
   return imageUploads.get(imageId) ?? null;
 }
 
@@ -142,6 +154,8 @@ export async function getUserPalmImages(userId: string) {
   if (dbResult.ok) {
     return dbResult.value;
   }
+
+  requireImageDatabaseRead();
 
   return Array.from(imageUploads.values())
     .filter((image) => image.userId === userId && !image.deletedAt)
@@ -168,6 +182,8 @@ export async function deletePalmImageUpload(input: { imageId: string; userId: st
   if (dbResult.ok) {
     return dbResult.value;
   }
+
+  requireImageDatabaseWrite();
 
   const image = imageUploads.get(input.imageId);
 

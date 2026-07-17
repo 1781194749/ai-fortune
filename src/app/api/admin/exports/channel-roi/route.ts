@@ -1,5 +1,5 @@
 import { recordAdminAudit } from "@/lib/admin-audit";
-import { canAccessAdmin } from "@/lib/admin-auth";
+import { canAccessAdminRequest } from "@/lib/admin-request";
 import { getChannelBudgetConfigMap } from "@/lib/channel-budget-config";
 import { normalizeChannelBudgetReviewDecision } from "@/lib/channel-budget-review";
 import { normalizeChannelSource } from "@/lib/channel-source";
@@ -22,7 +22,7 @@ function readFilterSource(url: URL) {
 export async function GET(request: Request) {
   const url = new URL(request.url);
 
-  if (!(await canAccessAdmin(Object.fromEntries(url.searchParams)))) {
+  if (!(await canAccessAdminRequest(request))) {
     return Response.json({ ok: false, message: "无权访问后台。" }, { status: 404 });
   }
 

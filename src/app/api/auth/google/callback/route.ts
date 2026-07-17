@@ -4,6 +4,8 @@ import { exchangeGoogleCode, getGoogleUser } from "@/lib/google-auth";
 import { maskEmail, normalizeEmail } from "@/lib/email-auth";
 import { createSession } from "@/lib/session";
 import { completeInviteRewardForLogin } from "@/lib/invite-rewards";
+import { settleOptionalSideEffects } from "@/lib/optional-side-effects";
+import { isDatabaseUnavailableError } from "@/lib/prisma";
 import { recordShareAttributionConversion } from "@/lib/share-attribution";
 import { ensureGoogleUserAndGetState } from "@/lib/user-store";
 import { resolvePostLoginRedirect } from "@/lib/post-login-redirect";
@@ -46,7 +48,9 @@ export async function GET(request: Request) {
       tier: account.tier,
       starBalance: account.starBalance,
     });
-    await recordShareAttributionConversion({ event: "login", userId: account.userId });
+    await settleOptionalSideEffects("google login telemetry", [
+      recordShareAttributionConversion({ event: "login", userId: account.userId }),
+    ]);
     await completeInviteRewardForLogin({
       userId: account.userId,
       isNewUser: account.isNewUser,
@@ -59,6 +63,12 @@ export async function GET(request: Request) {
 
     return NextResponse.redirect(new URL(redirectTo, requestUrl.origin));
   } catch (error) {
+    if (isDatabaseUnavailableError(error)) {
+      return NextResponse.redirect(
+        new URL("/login?googleError=database_unavailable", requestUrl.origin),
+      );
+    }
+
     console.error(
       "Google OAuth callback failed:",
       error instanceof Error ? error.message : "Unknown error",

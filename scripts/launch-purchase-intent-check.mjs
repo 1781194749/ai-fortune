@@ -18,7 +18,9 @@ const requiredFiles = [
   "src/app/pricing/page.tsx",
   "src/app/login/page.tsx",
   "src/app/login/login-form.tsx",
-  "src/app/api/auth/email/verify/route.ts",
+  "src/app/api/auth/google/route.ts",
+  "src/app/api/auth/google/callback/route.ts",
+  "src/lib/google-auth.ts",
   "src/lib/post-login-redirect.ts",
   "src/app/member/purchase-button.tsx",
 ];
@@ -231,7 +233,7 @@ function checkPricingPage(result, root) {
     tokens: [
       "function getMembershipIntent",
       "membershipProducts.find((product) => product.code === intent)",
-      "const selectedPlan = getMembershipIntent(intent)",
+      "const selectedPlan = getMembershipIntent(intent, visibleMembershipProducts)",
       "已选择套餐",
       "已带回你的购买意图",
       "查看套餐卡",
@@ -331,38 +333,45 @@ function checkLoginForm(result, root) {
   checkContainsAll(result, {
     id: "login-form-safe-redirect",
     group: "登录表单",
-    label: "安全登录跳转",
+    label: "Google 登录跳转",
     content,
     tokens: [
       "sanitizeReturnTo(initialReturnTo)",
-      "body: JSON.stringify({ email, code, returnTo })",
-      "window.location.assign(sanitizeReturnTo(data.redirectTo, returnTo))",
+      "const googleHref = `/api/auth/google?returnTo=${encodeURIComponent(returnTo)}`",
+      "href={googleHref}",
+      "Google 邮箱登录",
     ],
-    readyDetail: "登录提交携带 returnTo，接口响应后仍做前端二次清洗。",
-    readyAction: "保留双层清洗。",
-    blockingAction: "恢复 verify 请求 returnTo 和响应跳转清洗。",
+    readyDetail: "登录表单会把清洗后的 returnTo 交给 Google OAuth 入口。",
+    readyAction: "保留 Google 登录入口。",
+    blockingAction: "恢复 sanitizeReturnTo、googleHref 和 Google 登录按钮。",
   });
 }
 
-function checkVerifyRoute(result, root) {
-  const filename = "src/app/api/auth/email/verify/route.ts";
+function checkGoogleRoute(result, root) {
+  const filename = "src/app/api/auth/google/route.ts";
   const content = readProjectFile(root, filename);
+  const callbackContent = readProjectFile(root, "src/app/api/auth/google/callback/route.ts");
+  const googleAuthContent = readProjectFile(root, "src/lib/google-auth.ts");
   const redirectContent = readProjectFile(root, "src/lib/post-login-redirect.ts");
 
   checkContainsAll(result, {
-    id: "verify-route-return-to",
+    id: "google-route-return-to",
     group: "登录接口",
-    label: "登录后回跳",
-    content: `${content}\n${redirectContent}`,
+    label: "Google 登录后回跳",
+    content: `${content}\n${callbackContent}\n${googleAuthContent}\n${redirectContent}`,
     tokens: [
-      "{ email?: string; code?: string; returnTo?: string }",
+      "isGoogleAuthConfigured",
+      "sanitizeReturnTo(requestUrl.searchParams.get(\"returnTo\")",
+      "googleError=not_configured",
+      "attemptCookie",
+      "returnTo",
+      "ensureGoogleUserAndGetState",
       "resolvePostLoginRedirect",
-      "sanitizeReturnTo(input.returnTo)",
-      "redirectTo,",
+      "NextResponse.redirect(new URL(redirectTo, requestUrl.origin))",
     ],
-    readyDetail: "验证码接口会返回经过清洗和老用户分流后的 redirectTo。",
-    readyAction: "保留接口回跳逻辑。",
-    blockingAction: "补齐 returnTo 入参、resolvePostLoginRedirect 和 redirectTo 返回值。",
+    readyDetail: "Google OAuth 会保存清洗后的 returnTo，并在回调后走统一登录后分流。",
+    readyAction: "保留 Google OAuth 回跳逻辑。",
+    blockingAction: "补齐 Google OAuth 入口、回调、returnTo 清洗和登录后分流。",
   });
 }
 
@@ -394,7 +403,7 @@ function runStaticChecks(result, root) {
   checkPricingPage(result, root);
   checkLoginPage(result, root);
   checkLoginForm(result, root);
-  checkVerifyRoute(result, root);
+  checkGoogleRoute(result, root);
   checkPackageCommand(result, root);
 }
 
@@ -530,7 +539,9 @@ async function runRuntimeChecks(result, input) {
     const plainLoginReady =
       plainLoginResponse.status === 200 &&
       !plainLoginText.includes("已保留套餐") &&
-      plainLoginText.includes("账号与会员底座");
+      plainLoginText.includes("进入 Chat 前登录") &&
+      plainLoginText.includes("登录后直接进入 Chat") &&
+      plainLoginText.includes("Google 邮箱登录");
 
     addRuntimeCheck(result, {
       id: "runtime-login-without-intent",
@@ -563,54 +574,44 @@ async function runRuntimeChecks(result, input) {
       blockingAction: "检查 sanitizeReturnTo 对外链 returnTo 的降级逻辑。",
     });
 
-    const verifyResponse = await fetchWithTimeout({
-      url: `${input.baseUrl}/api/auth/email/verify`,
-      method: "POST",
+    const googleResponse = await fetchWithTimeout({
+      url: `${input.baseUrl}/api/auth/google?returnTo=${encodedMonthlyReturnTo}`,
+      method: "GET",
       timeoutMs: input.timeoutMs,
-      body: JSON.stringify({
-        email: "purchase-intent-check@example.com",
-        code: "000000",
-        returnTo: monthlyReturnTo,
-      }),
     });
-    const verifyJson = await verifyResponse.json().catch(() => null);
-    const verifyReady =
-      verifyResponse.status === 200 &&
-      verifyJson?.ok === true &&
-      verifyJson?.redirectTo === monthlyReturnTo;
+    const googleLocation = googleResponse.headers.get("location") ?? "";
+    const googleReady =
+      [301, 302, 303, 307, 308].includes(googleResponse.status) &&
+      (googleLocation.includes("accounts.google.com") ||
+        (googleLocation.includes("/login?googleError=not_configured") &&
+          googleLocation.includes(encodeURIComponent(monthlyReturnTo))));
 
     addRuntimeCheck(result, {
-      id: "runtime-verify-preserves-safe-return-to",
-      label: "验证码接口保留安全 returnTo",
-      ready: verifyReady,
-      readyDetail: "登录接口会把安全购买意图原样返回给前端。",
-      blockingDetail: `status=${verifyResponse.status}, redirectTo=${verifyJson?.redirectTo ?? "<none>"}`,
-      readyAction: "保留接口回跳。",
-      blockingAction: "检查 /api/auth/email/verify 的 returnTo 清洗和返回值。",
+      id: "runtime-google-preserves-safe-return-to",
+      label: "Google 登录承接安全 returnTo",
+      ready: googleReady,
+      readyDetail: "Google 登录入口会承接安全购买意图，或在未配置时带回登录页提示。",
+      blockingDetail: `status=${googleResponse.status}, location=${googleLocation || "<none>"}`,
+      readyAction: "保留 Google OAuth 入口。",
+      blockingAction: "检查 /api/auth/google 的 returnTo 清洗、未配置提示和 OAuth 跳转。",
     });
 
-    const maliciousVerifyResponse = await fetchWithTimeout({
-      url: `${input.baseUrl}/api/auth/email/verify`,
-      method: "POST",
+    const maliciousGoogleResponse = await fetchWithTimeout({
+      url: `${input.baseUrl}/api/auth/google?returnTo=${encodeURIComponent("https://evil.example/pricing?intent=monthly")}`,
+      method: "GET",
       timeoutMs: input.timeoutMs,
-      body: JSON.stringify({
-        email: "purchase-intent-check@example.com",
-        code: "000000",
-        returnTo: "https://evil.example/pricing?intent=monthly",
-      }),
     });
-    const maliciousVerifyJson = await maliciousVerifyResponse.json().catch(() => null);
-    const maliciousVerifyReady =
-      maliciousVerifyResponse.status === 200 &&
-      maliciousVerifyJson?.ok === true &&
-      maliciousVerifyJson?.redirectTo === "/member";
+    const maliciousGoogleLocation = maliciousGoogleResponse.headers.get("location") ?? "";
+    const maliciousGoogleReady =
+      [301, 302, 303, 307, 308].includes(maliciousGoogleResponse.status) &&
+      !maliciousGoogleLocation.includes("evil.example");
 
     addRuntimeCheck(result, {
-      id: "runtime-verify-rejects-external-return-to",
-      label: "验证码接口拒绝外链 returnTo",
-      ready: maliciousVerifyReady,
-      readyDetail: "登录接口会把外链 returnTo 降级到会员中心。",
-      blockingDetail: `status=${maliciousVerifyResponse.status}, redirectTo=${maliciousVerifyJson?.redirectTo ?? "<none>"}`,
+      id: "runtime-google-rejects-external-return-to",
+      label: "Google 登录拒绝外链 returnTo",
+      ready: maliciousGoogleReady,
+      readyDetail: "Google 登录入口不会把外链 returnTo 直接带入跳转地址。",
+      blockingDetail: `status=${maliciousGoogleResponse.status}, location=${maliciousGoogleLocation || "<none>"}`,
       readyAction: "保留接口安全兜底。",
       blockingAction: "检查 sanitizeReturnTo 对外链和协议 URL 的处理。",
     });

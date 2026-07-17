@@ -154,6 +154,15 @@ function readProjectFile(root, filename) {
 
   return readFileSync(absolutePath, "utf8");
 }
+function readAdminHealthContent(root) {
+  return [
+    readProjectFile(root, "src/app/admin/health/page.tsx"),
+    readProjectFile(root, "src/app/admin/health/full/page.tsx"),
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 
 function createResult(input) {
   return {
@@ -222,7 +231,7 @@ function checkStaticWiring(result, root) {
   const offlinePack = readProjectFile(root, "src/lib/launch-offline-action-pack.ts");
   const founderDossier = readProjectFile(root, "src/lib/launch-founder-dossier.ts");
   const quickForm = readProjectFile(root, "src/app/admin/launch-offline-action-quick-form.tsx");
-  const healthPage = readProjectFile(root, "src/app/admin/health/page.tsx");
+  const healthPage = readAdminHealthContent(root);
   const offlineRoute = readProjectFile(root, "src/app/api/admin/launch/offline-action-pack/route.ts");
   const founderRoute = readProjectFile(root, "src/app/api/admin/launch/founder-dossier/route.ts");
   const externalRoute = readProjectFile(root, "src/app/api/admin/launch/external-readiness/route.ts");

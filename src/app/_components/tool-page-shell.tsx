@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ChevronRight, LayoutDashboard, MessageCircle, ShieldCheck, type LucideIcon } from "lucide-react";
 import { brand } from "@/lib/site";
 import { LogoutButton } from "@/app/member/logout-button";
+import type { ChatReadingMethod } from "@/lib/chat-service";
 import { XuanjiMark } from "./xuanji-mark";
 
 type Accent = "gold" | "peacock" | "vermillion";
@@ -30,6 +31,7 @@ export function ToolPageShell({
   description,
   icon: Icon,
   accent = "gold",
+  chatMethod,
   children,
 }: {
   eyebrow: string;
@@ -37,6 +39,7 @@ export function ToolPageShell({
   description: string;
   icon: LucideIcon;
   accent?: Accent;
+  chatMethod?: ChatReadingMethod;
   children: React.ReactNode;
 }) {
   const styles = accentStyles[accent];
@@ -53,7 +56,7 @@ export function ToolPageShell({
             </span>
           </Link>
           <nav className="flex items-center gap-2 text-sm">
-            <Link href="/chat" className="hidden h-10 items-center gap-2 rounded-full px-4 text-[#aaa294] transition hover:bg-[#11120f] hover:text-[#efd9a6] sm:inline-flex">
+            <Link href={chatMethod ? `/chat?method=${chatMethod}` : "/chat"} className="hidden h-10 items-center gap-2 rounded-full px-4 text-[#aaa294] transition hover:bg-[#11120f] hover:text-[#efd9a6] sm:inline-flex">
               <MessageCircle size={15} aria-hidden="true" />
               Chat
             </Link>

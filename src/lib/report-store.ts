@@ -2,7 +2,7 @@ import "server-only";
 
 import { randomUUID } from "crypto";
 import { ReportStatus, ReportType } from "@/generated/prisma/enums";
-import { tryPrisma } from "@/lib/prisma";
+import { assertDatabaseFallbackAllowed, tryPrisma } from "@/lib/prisma";
 import { ensureDbUser } from "@/lib/user-store";
 
 export type MockReportType =
@@ -28,6 +28,7 @@ export type MockReport = {
   orderId?: string;
   modelUsed?: string;
   costTokens?: number;
+  requestKey?: string;
   shareSlug?: string;
   createdAt: string;
   updatedAt: string;
@@ -52,6 +53,7 @@ export type UpdateMockReportInput = {
   toolResults?: unknown;
   modelUsed?: string;
   costTokens?: number;
+  requestKey?: string | null;
   ensureShareSlug?: boolean;
 };
 
@@ -59,7 +61,7 @@ type MockReportState = {
   reports: Map<string, MockReport>;
 };
 
-type DbReportLike = {
+export type DbReportLike = {
   id: string;
   userId: string;
   type: string;
@@ -72,6 +74,7 @@ type DbReportLike = {
   orderId: string | null;
   modelUsed: string | null;
   costTokens: number | null;
+  requestKey: string | null;
   shareSlug: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -91,12 +94,20 @@ if (!globalThis.xuanjiMockReportState) {
   globalThis.xuanjiMockReportState = state;
 }
 
-function createReportId() {
+export function createReportId() {
   return `report_${randomUUID()}`;
 }
 
-function createShareSlug() {
+export function createShareSlug() {
   return `xj-${randomUUID().replace(/-/g, "").slice(0, 14)}`;
+}
+
+function requireReportDatabaseWrite() {
+  assertDatabaseFallbackAllowed("PostgreSQL 暂时不可用，报告状态未变更。");
+}
+
+function requireReportDatabaseRead() {
+  assertDatabaseFallbackAllowed("PostgreSQL 暂时不可用，无法读取报告数据。");
 }
 
 function toJsonValue(value: unknown) {
@@ -107,7 +118,7 @@ function toJsonValue(value: unknown) {
   return JSON.parse(JSON.stringify(value)) as never;
 }
 
-function mapDbReport(report: DbReportLike): MockReport {
+export function mapDbReport(report: DbReportLike): MockReport {
   return {
     id: report.id,
     userId: report.userId,
@@ -121,13 +132,14 @@ function mapDbReport(report: DbReportLike): MockReport {
     orderId: report.orderId ?? undefined,
     modelUsed: report.modelUsed ?? undefined,
     costTokens: report.costTokens ?? undefined,
+    requestKey: report.requestKey ?? undefined,
     shareSlug: report.shareSlug ?? undefined,
     createdAt: report.createdAt.toISOString(),
     updatedAt: report.updatedAt.toISOString(),
   };
 }
 
-function toDbReportType(type: MockReportType) {
+export function toDbReportType(type: MockReportType) {
   if (type === "COMPOSITE") {
     return ReportType.COMPOSITE;
   }
@@ -151,7 +163,7 @@ function toDbReportType(type: MockReportType) {
   return ReportType.TAROT;
 }
 
-function toDbReportStatus(status: MockReportStatus) {
+export function toDbReportStatus(status: MockReportStatus) {
   if (status === "GENERATING") {
     return ReportStatus.GENERATING;
   }
@@ -184,6 +196,7 @@ export async function createMockReport(input: CreateMockReportInput) {
         orderId: input.orderId,
         modelUsed: input.modelUsed,
         costTokens: input.costTokens,
+        requestKey: input.requestKey,
         shareSlug,
       },
     });
@@ -194,6 +207,8 @@ export async function createMockReport(input: CreateMockReportInput) {
   if (dbResult.ok) {
     return dbResult.value;
   }
+
+  requireReportDatabaseWrite();
 
   const report: MockReport = {
     ...input,
@@ -231,6 +246,7 @@ export async function updateMockReport(input: UpdateMockReportInput) {
         : {}),
       ...(input.modelUsed !== undefined ? { modelUsed: input.modelUsed } : {}),
       ...(input.costTokens !== undefined ? { costTokens: input.costTokens } : {}),
+      ...(input.requestKey !== undefined ? { requestKey: input.requestKey } : {}),
       ...(shouldEnsureShareSlug ? { shareSlug: report.shareSlug ?? createShareSlug() } : {}),
     };
 
@@ -245,6 +261,8 @@ export async function updateMockReport(input: UpdateMockReportInput) {
   if (dbResult.ok) {
     return dbResult.value;
   }
+
+  requireReportDatabaseWrite();
 
   const report = state.reports.get(input.reportId);
 
@@ -264,6 +282,9 @@ export async function updateMockReport(input: UpdateMockReportInput) {
     ...(input.toolResults !== undefined ? { toolResults: input.toolResults } : {}),
     ...(input.modelUsed !== undefined ? { modelUsed: input.modelUsed } : {}),
     ...(input.costTokens !== undefined ? { costTokens: input.costTokens } : {}),
+    ...(input.requestKey !== undefined
+      ? { requestKey: input.requestKey ?? undefined }
+      : {}),
     ...(shouldEnsureShareSlug ? { shareSlug: report.shareSlug ?? createShareSlug() } : {}),
     updatedAt: new Date().toISOString(),
   };
@@ -282,6 +303,8 @@ export async function getMockReport(reportId: string) {
     return dbResult.value;
   }
 
+  requireReportDatabaseRead();
+
   return state.reports.get(reportId) ?? null;
 }
 
@@ -294,6 +317,8 @@ export async function getSharedMockReport(shareSlug: string) {
   if (dbResult.ok) {
     return dbResult.value;
   }
+
+  requireReportDatabaseRead();
 
   return (
     Array.from(state.reports.values()).find((report) => report.shareSlug === shareSlug) ??
@@ -317,6 +342,8 @@ export async function getUserMockReportByOrderId(input: { userId: string; orderI
   if (dbResult.ok) {
     return dbResult.value;
   }
+
+  requireReportDatabaseRead();
 
   return (
     Array.from(state.reports.values()).find(
@@ -350,6 +377,8 @@ export async function updateMockReportShare(input: {
   if (dbResult.ok) {
     return dbResult.value;
   }
+
+  requireReportDatabaseWrite();
 
   const report = state.reports.get(input.reportId);
 
@@ -393,6 +422,8 @@ export async function getUserMockReports(userId: string) {
     return dbResult.value;
   }
 
+  requireReportDatabaseRead();
+
   return Array.from(state.reports.values())
     .filter((report) => report.userId === userId)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -412,6 +443,8 @@ export async function getAdminReports(input: { take?: number } = {}) {
   if (dbResult.ok) {
     return dbResult.value;
   }
+
+  requireReportDatabaseRead();
 
   return Array.from(state.reports.values())
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))

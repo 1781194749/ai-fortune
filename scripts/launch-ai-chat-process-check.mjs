@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { existsSync, readFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import process from "node:process";
 
@@ -11,13 +12,23 @@ const statuses = {
 
 const defaultTimeoutMs = 45000;
 
+function delay(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
 const requiredFiles = [
   "src/lib/ai-cost.ts",
   "src/lib/ai-orchestrator.ts",
   "src/app/chat/page.tsx",
   "src/app/chat/chat-client.tsx",
+  "src/app/chat/chat-service-selector.tsx",
+  "src/app/chat/chat-ritual.tsx",
   "src/app/chat/markdown-message.tsx",
   "src/app/api/chat/route.ts",
+  "src/app/api/chat/sessions/[sessionId]/route.ts",
+  "src/lib/chat-ui-message.ts",
+  "src/lib/chat-service.ts",
+  "src/lib/chat-turn-service.ts",
   "src/lib/ai-session-store.ts",
   "src/app/api/storage/qiniu/upload-token/route.ts",
   "src/app/api/images/palm/route.ts",
@@ -142,6 +153,19 @@ function checkContainsAll(result, input) {
   });
 }
 
+function checkExcludesAll(result, input) {
+  const present = input.tokens.filter((token) => input.content?.includes(token));
+
+  addCheck(result, {
+    id: input.id,
+    group: input.group,
+    label: input.label,
+    status: present.length === 0 ? statuses.ready : statuses.blocking,
+    detail: present.length === 0 ? input.readyDetail : `仍包含：${present.join(", ")}`,
+    action: present.length === 0 ? input.readyAction : input.blockingAction,
+  });
+}
+
 function runStaticChecks(result, root) {
   for (const filename of requiredFiles) {
     checkFileExists(result, root, filename);
@@ -184,20 +208,67 @@ function runStaticChecks(result, root) {
     id: "chat-client-progressive-process",
     group: "聊天体验",
     label: "等待态分阶段过程",
-    content: readProjectFile(root, "src/app/chat/chat-client.tsx"),
+    content: [
+      readProjectFile(root, "src/app/chat/chat-client.tsx"),
+      readProjectFile(root, "src/app/chat/chat-ritual.tsx"),
+      readProjectFile(root, "src/app/api/chat/route.ts"),
+      readProjectFile(root, "src/lib/ai-orchestrator.ts"),
+    ].join("\n"),
     tokens: [
-      "loadingStages",
-      "activeStageIndex",
-      "data-process-status",
+      "data-chatProgress",
+      "emitRitualProgress",
+      "ChatRitual",
+      "tarot_card",
+      "bagua_stage",
+      "bazi_pillars",
+      "bazi_wuxing",
       "aria-live",
-      "识别问题类型",
-      "读取会员档案",
-      "调用命理工具",
-      "生成专属回复",
+      "辨识问意",
+      "档案已合参",
+      "启用推演",
+      "生成顾问结论",
     ],
-    readyDetail: "聊天页在等待 AI 返回时会展示分阶段过程和当前执行状态。",
-    readyAction: "保留分阶段等待态，减少用户干等感。",
-    blockingAction: "恢复 ChatClient 的 loadingStages、activeStageIndex 和过程卡状态。",
+    readyDetail: "Chat 由后端真实进度事件驱动，并按塔罗、八卦、八字展示专属仪式数据。",
+    readyAction: "保留 data-chatProgress 协议和三类真实仪式组件。",
+    blockingAction: "恢复后端进度事件、仪式数据和 ChatRitual 展示。",
+  });
+
+  checkExcludesAll(result, {
+    id: "chat-client-no-fake-progress",
+    group: "聊天体验",
+    label: "禁止定时伪进度",
+    content: readProjectFile(root, "src/app/chat/chat-client.tsx"),
+    tokens: ["loadingStages", "activeStageIndex", "setInterval(() =>"],
+    readyDetail: "Chat 不再使用前端计时器伪造后端步骤。",
+    readyAction: "继续只消费服务端真实进度事件。",
+    blockingAction: "移除 loadingStages、activeStageIndex 和定时轮播。",
+  });
+
+  checkContainsAll(result, {
+    id: "chat-client-service-flow",
+    group: "聊天体验",
+    label: "发送前服务确认与回答后结论",
+    content: [
+      readProjectFile(root, "src/lib/chat-service.ts"),
+      readProjectFile(root, "src/app/chat/chat-service-selector.tsx"),
+      readProjectFile(root, "src/app/chat/chat-ritual.tsx"),
+      readProjectFile(root, "src/app/chat/chat-client.tsx"),
+    ].join("\n"),
+    tokens: [
+      "快速问答",
+      "正式问事",
+      "深度推演",
+      "预计",
+      "ChatConclusionCard",
+      "最大风险",
+      "继续追问",
+      "生成深度报告",
+      "用轻量模式回答",
+      "反馈问题",
+    ],
+    readyDetail: "Chat 已覆盖发送前服务选择、结论卡、追问、深度报告和失败操作。",
+    readyAction: "保留模式计费与完整问事闭环。",
+    blockingAction: "补齐服务选择、结论卡和失败三路操作。",
   });
 
   checkContainsAll(result, {
@@ -211,21 +282,23 @@ function runStaticChecks(result, root) {
       readProjectFile(root, "src/lib/ai-orchestrator.ts"),
     ].join("\n"),
     tokens: [
-      "stream: true",
-      "response.output_text.delta",
-      "application/x-ndjson",
-      "response.body.getReader()",
-      "scheduleStreamedAnswerFlush",
-      "window.requestAnimationFrame",
+      "useChat",
+      "DefaultChatTransport",
+      "throttle: 45",
+      "Intl.Segmenter",
+      "createUIMessageStream",
+      "generatePreparedAiChat",
+      "streamLocalAnswer",
+      "buildPreparedAiChatResult",
       "ReactMarkdown",
       "remarkGfm",
       "MarkdownMessage",
-      'type: "delta"',
-      'type: "complete"',
+      'type: "text-delta"',
+      'type: "data-chatComplete"',
     ],
-    readyDetail: "Chat 会读取 Responses API 增量事件，并按动画帧合并渲染回答。",
-    readyAction: "保留 NDJSON 协议和动画帧批量更新，避免退化为整段 JSON 返回。",
-    blockingAction: "恢复 Responses API stream、NDJSON Route Handler 和客户端 ReadableStream 解析。",
+    readyDetail: "Chat 使用 AI SDK UI Stream，但只把已通过结构化校验的正文用中文分词流式渲染。",
+    readyAction: "保留校验后流式渲染、useChat throttle 和 data-chatComplete 事件。",
+    blockingAction: "恢复 generatePreparedAiChat、结构化校验后 streamLocalAnswer 和 UI Message Stream。",
   });
 
   checkContainsAll(result, {
@@ -234,7 +307,7 @@ function runStaticChecks(result, root) {
     label: "停止生成与智能滚动",
     content: readProjectFile(root, "src/app/chat/chat-client.tsx"),
     tokens: [
-      "abortControllerRef",
+      "stop",
       "stopGenerating",
       "停止生成",
       "shouldAutoScrollRef",
@@ -242,7 +315,7 @@ function runStaticChecks(result, root) {
       "滚动到最新回答",
     ],
     readyDetail: "Chat 支持停止生成，并在用户上滑阅读时暂停自动跟随。",
-    readyAction: "保留 AbortController、近底部判断和返回最新回答按钮。",
+    readyAction: "保留 useChat stop、近底部判断和返回最新回答按钮。",
     blockingAction: "恢复停止生成和智能滚动，避免长回答强制抢夺用户滚动位置。",
   });
 
@@ -253,17 +326,27 @@ function runStaticChecks(result, root) {
     content: readProjectFile(root, "src/app/chat/chat-client.tsx"),
     tokens: [
       "toolSummary",
-      "toolStatusLabel",
-      "查看原始结果",
+      "tool.status",
       "tarot_spread_generator",
       "bazi_calculator",
       "birth_info_checker",
       "bagua_generator",
       "palm_image_checker",
     ],
-    readyDetail: "聊天结果会展示工具状态、概要和可展开的原始结果。",
+    readyDetail: "聊天结果会展示工具状态和用户可读的工具概要。",
     readyAction: "保留工具证据卡，强化用户对 AI 调用工具的信任。",
-    blockingAction: "恢复工具结果卡、状态标签、概要和原始 JSON 展开区。",
+    blockingAction: "恢复工具结果卡、状态标签和用户可读概要。",
+  });
+
+  checkExcludesAll(result, {
+    id: "chat-client-no-raw-json",
+    group: "聊天体验",
+    label: "不展示原始 JSON",
+    content: readProjectFile(root, "src/app/chat/chat-client.tsx"),
+    tokens: ["原始结果", "JSON.stringify(tool.result"],
+    readyDetail: "Chat 不会向用户展示工具原始 JSON。",
+    readyAction: "继续只展示用户可读摘要。",
+    blockingAction: "移除原始 JSON 展开区。",
   });
 
   checkContainsAll(result, {
@@ -273,13 +356,13 @@ function runStaticChecks(result, root) {
     content: readProjectFile(root, "src/app/chat/chat-client.tsx"),
     tokens: [
       "uploadPalmAttachment",
-      "deletePalmAttachment",
+      "removePalmAttachment",
       "/api/storage/qiniu/upload-token",
       "/api/images/palm",
       "palmImageId",
       "图片上传授权",
       "手相图片",
-      "上传附图",
+      "添加手相图片",
     ],
     readyDetail: "聊天页支持选择、授权、上传、附加和移除手相图片。",
     readyAction: "保留对话入口里的图片附件体验。",
@@ -287,22 +370,25 @@ function runStaticChecks(result, root) {
   });
 
   checkContainsAll(result, {
-    id: "chat-client-recent-history",
+    id: "chat-client-conversation-history",
     group: "聊天体验",
-    label: "聊天页最近对话",
+    label: "聊天页完整会话",
     content: readProjectFile(root, "src/app/chat/chat-client.tsx"),
     tokens: [
       "initialRecentChats",
       "recentChats",
       "createRecentChatFromResult",
       "最近对话",
-      "会员记忆沉淀",
       "getIntentLabel",
       "个工具",
+      "activeChatId",
+      "sessionId: activeChatId",
+      "正在加载完整对话",
+      "setMessages(restoredMessages)",
     ],
-    readyDetail: "聊天页会展示最近 AI 对话，并在发送成功后即时更新列表。",
-    readyAction: "保留聊天页最近对话列表，强化会员记忆资产。",
-    blockingAction: "恢复 ChatClient 的 initialRecentChats、recentChats 和发送后插入逻辑。",
+    readyDetail: "聊天页会展示最近会话、加载完整 Transcript，并携带 activeChatId 继续追问。",
+    readyAction: "保留完整会话恢复和同 Session 续问。",
+    blockingAction: "恢复 activeChatId 提交、会话详情 GET 和 restoredMessages。",
   });
 
   checkContainsAll(result, {
@@ -320,11 +406,34 @@ function runStaticChecks(result, root) {
       "birth_info_checker",
       "bagua_generator",
       "palm_image_checker",
-      "generateWithOpenAI",
+      "generateText",
+      "compilePreparedAiChatPrompt",
+      "FortuneAnswer",
     ],
-    readyDetail: "AI 编排层包含意图识别、会员档案和塔罗/八字/八卦/手相工具。",
-    readyAction: "保留后端工具链，前端等待态以该链路为准。",
-    blockingAction: "恢复 runAiChat 的意图识别、本地工具和 OpenAI 包装逻辑。",
+    readyDetail: "AI 编排层包含意图识别、会员档案、命理工具和结构化 Prompt 编译。",
+    readyAction: "保留后端工具链、证据包和结构化 FortuneAnswer 输出。",
+    blockingAction: "恢复 prepareAiChat、工具链、compilePreparedAiChatPrompt 和结构化生成逻辑。",
+  });
+
+  checkContainsAll(result, {
+    id: "ai-orchestrator-product-identity",
+    group: "AI 编排",
+    label: "产品身份与内部信息保护",
+    content: [
+      readProjectFile(root, "src/lib/ai-orchestrator.ts"),
+      readProjectFile(root, "src/app/api/chat/route.ts"),
+      readProjectFile(root, "src/app/chat/chat-client.tsx"),
+    ].join("\n"),
+    tokens: [
+      "getProtectedProductAnswer",
+      "productIdentityAnswer",
+      "prepared.local.fixedAnswer",
+      "identity_boundary",
+      "hasProcessTrace",
+    ],
+    readyDetail: "模型身份和内部实现问题会使用固定的玄机 AI 产品口径，不进入模型生成，也不展示工具推演卡。",
+    readyAction: "保留固定身份答复、模型调用短路和零工具过程卡隐藏逻辑。",
+    blockingAction: "补回产品身份识别、fixedAnswer 短路和前端过程卡隐藏逻辑。",
   });
 
   checkContainsAll(result, {
@@ -334,12 +443,12 @@ function runStaticChecks(result, root) {
     content: readProjectFile(root, "src/lib/ai-orchestrator.ts"),
     tokens: [
       "AiChatPalmImage",
-      "detectIntent(question: string, palmImage",
+      "function detectIntent(",
       "if (palmImage)",
       "status: \"completed\"",
       "imageId: input.palmImage.id",
       "正式手相报告会继续使用会员手相额度",
-      "palmImageId: input.palmImage?.id",
+      "palmImageAttached",
     ],
     readyDetail: "AI 编排层会把附图对话识别为手相，并只做图片预检和付费链路引导。",
     readyAction: "保留附图手相预检，避免普通对话绕过手相报告权益。",
@@ -347,47 +456,59 @@ function runStaticChecks(result, root) {
   });
 
   checkContainsAll(result, {
-    id: "ai-orchestrator-recent-memory",
+    id: "ai-orchestrator-conversation-history",
     group: "AI 编排",
-    label: "近期对话记忆入模",
+    label: "当前会话历史入模",
     content: readProjectFile(root, "src/lib/ai-orchestrator.ts"),
     tokens: [
-      "getRecentChatSessions",
-      "type RecentChatSession",
-      "buildRecentChatMemory",
-      "recentChats",
-      "recentChatCount",
-      "recentChatMemory",
-      "recentChatCount: recentChats.length",
+      "ChatConversationMessage",
+      "normalizeConversationHistory",
+      "buildPreparedAiChatMessages",
+      "conversationHistory",
+      "conversationMessageCount",
+      "readPreviousIntent",
+      "findReusableTool",
     ],
-    readyDetail: "AI 编排层会读取最近对话，并把会员记忆写入 profile_reader 和模型上下文。",
-    readyAction: "保留近期对话记忆入模，确保会员资产不只停留在页面展示。",
-    blockingAction: "恢复 runAiChat 对 getRecentChatSessions、recentChatMemory 和 profile_reader.recentChatCount 的使用。",
+    readyDetail: "AI 编排层会把当前 Session 的角色化历史写入模型上下文，并延续意图和工具结果。",
+    readyAction: "保留服务端会话历史、连续意图和工具复用。",
+    blockingAction: "恢复 ChatConversationMessage、buildPreparedAiChatMessages 和 findReusableTool。",
   });
 
   checkContainsAll(result, {
     id: "chat-api-cost-session",
     group: "AI 编排",
-    label: "星力消耗与会话记录",
-    content: readProjectFile(root, "src/app/api/chat/route.ts"),
+    label: "星力消耗、幂等与会话记录",
+    content: [
+      readProjectFile(root, "src/app/api/chat/route.ts"),
+      readProjectFile(root, "src/lib/chat-turn-service.ts"),
+    ].join("\n"),
     tokens: [
-      "checkEntitlement",
       "prepareAiChat",
-      "runPreparedAiChatStream",
-      "spendStars",
-      "saveChatTurn",
+      "generatePreparedAiChat",
+      "buildPreparedAiChatResult",
+      "validation",
+      "clientRequestId",
+      "reserveChatTurn",
+      "completeChatTurn",
+      "failChatTurn",
+      "Serializable",
+      "SESSION_BUSY",
+      "IDEMPOTENCY_MISMATCH",
+      "AiTurnStatus.PARTIAL",
+      "AiTurnStatus.CANCELLED",
       "createSession",
-      "ReadableStream",
-      "application/x-ndjson",
+      "createUIMessageStream",
+      "createUIMessageStreamResponse",
       "balanceAfter",
       "chatSessionId",
+      "sessionId",
       "getPalmImageUpload",
       "palmImageId",
       "手相图片不存在或不可用",
     ],
-    readyDetail: "AI 对话接口会校验星力和图片归属、运行工具链、扣费、保存会话并刷新余额。",
-    readyAction: "保留 /api/chat 的付费闭环。",
-    blockingAction: "恢复 /api/chat 的权益校验、图片归属校验、扣费、保存和余额返回。",
+    readyDetail: "AI 对话接口会在串行化事务中预扣费、锁定会话、保存轮次，并支持幂等重放、部分结果和失败退款。",
+    readyAction: "保留 /api/chat 与 chat-turn-service 的原子付费闭环。",
+    blockingAction: "恢复请求幂等、会话锁、原子扣费、完成落库和失败退款。",
   });
 
   checkContainsAll(result, {
@@ -397,8 +518,11 @@ function runStaticChecks(result, root) {
     content: readProjectFile(root, "src/lib/ai-session-store.ts"),
     tokens: [
       "export type RecentChatSession",
+      "export type ChatSessionDetail",
+      "getChatSessionDetail",
       "getRecentChatSessions",
       "normalizeRecentChatSession",
+      "if (input.sessionId)",
       "toolNames",
       "SessionMode.CHAT",
       "messages",
@@ -418,11 +542,10 @@ function runStaticChecks(result, root) {
     tokens: [
       "getRecentChatSessions",
       "recentChats",
-      "会员记忆沉淀",
-      "最近 AI 对话",
+      "最近对话",
+      "完整对话到 Chat 里继续",
       "getChatIntentLabel",
-      "formatChatTime",
-      "个工具",
+      "formatTime",
     ],
     readyDetail: "会员中心会展示最近 AI 对话摘要，让历史记录成为会员资产。",
     readyAction: "保留会员中心最近 AI 对话模块。",
@@ -485,27 +608,69 @@ async function readJson(response) {
 async function readChatResponse(response) {
   const contentType = response.headers.get("content-type") ?? "";
 
-  if (!contentType.includes("application/x-ndjson")) {
+  if (!contentType.includes("text/event-stream")) {
     return {
       json: await readJson(response),
       stream: null,
     };
   }
 
-  const events = (await response.text())
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      try {
-        return JSON.parse(line);
-      } catch {
-        return null;
+  const startedAt = Date.now();
+  const events = [];
+  let firstDeltaMs = null;
+  let buffer = "";
+  const reader = response.body?.getReader();
+  const decoder = new TextDecoder();
+
+  if (reader) {
+    while (true) {
+      const { value, done } = await reader.read();
+
+      if (done) {
+        break;
       }
-    })
+
+      buffer += decoder.decode(value, { stream: true });
+      let lineBreakIndex = buffer.indexOf("\n");
+
+      while (lineBreakIndex >= 0) {
+        const line = buffer.slice(0, lineBreakIndex).trim();
+        buffer = buffer.slice(lineBreakIndex + 1);
+
+        if (line.startsWith("data: ")) {
+          const payload = line.slice("data: ".length);
+
+          if (payload && payload !== "[DONE]") {
+            try {
+              const event = JSON.parse(payload);
+              events.push(event);
+
+              if (event?.type === "text-delta" && firstDeltaMs === null) {
+                firstDeltaMs = Date.now() - startedAt;
+              }
+            } catch {
+              // Ignore malformed diagnostic chunks; the completion check will fail below.
+            }
+          }
+        }
+
+        lineBreakIndex = buffer.indexOf("\n");
+      }
+    }
+  }
+
+  const completed = events.findLast((event) => event?.type === "data-chatComplete");
+  const failed = events.findLast(
+    (event) => event?.type === "data-chatError" || event?.type === "error",
+  );
+  const progressEvents = events
+    .filter((event) => event?.type === "data-chatProgress")
+    .map((event) => event.data)
     .filter(Boolean);
-  const completed = events.findLast((event) => event?.type === "complete");
-  const failed = events.findLast((event) => event?.type === "error");
+  const firstTextIndex = events.findIndex((event) => event?.type === "text-delta");
+  const lastRitualIndex = events.findLastIndex(
+    (event) => event?.type === "data-chatProgress" && event.data?.step === "ritual",
+  );
 
   return {
     json:
@@ -513,16 +678,27 @@ async function readChatResponse(response) {
       (failed
         ? {
             ok: false,
-            message: failed.message,
-            balance: failed.balanceAfter,
+            message: failed.data?.message ?? failed.errorText,
+            balance: failed.data?.balanceAfter,
           }
         : null),
     stream: {
       contentType,
       started: events.some((event) => event?.type === "start"),
-      deltaCount: events.filter((event) => event?.type === "delta").length,
-      replaceCount: events.filter((event) => event?.type === "replace").length,
-      completed: Boolean(completed),
+      deltaCount: events.filter((event) => event?.type === "text-delta").length,
+      firstDeltaMs,
+      durationMs: Date.now() - startedAt,
+      completed:
+        Boolean(completed) && events.some((event) => event?.type === "finish"),
+      progressSteps: [...new Set(progressEvents.map((event) => event.step))],
+      ritualKinds: progressEvents
+        .map((event) => event.ritualItem?.kind)
+        .filter(Boolean),
+      ritualItems: progressEvents
+        .map((event) => event.ritualItem)
+        .filter(Boolean),
+      ritualItemCount: progressEvents.filter((event) => event.ritualItem).length,
+      ritualBeforeText: lastRitualIndex >= 0 && firstTextIndex > lastRitualIndex,
     },
   };
 }
@@ -575,12 +751,13 @@ function hasStep(data, label) {
 }
 
 async function postChat(input, question, cookie, extraBody = {}) {
+  const clientRequestId = extraBody.clientRequestId ?? randomUUID();
   const response = await fetchWithTimeout({
     url: `${input.baseUrl}/api/chat`,
     method: "POST",
     timeoutMs: input.timeoutMs,
     cookie,
-    body: JSON.stringify({ question, ...extraBody }),
+    body: JSON.stringify({ question, ...extraBody, clientRequestId }),
   });
 
   const payload = await readChatResponse(response);
@@ -589,7 +766,100 @@ async function postChat(input, question, cookie, extraBody = {}) {
     response,
     ...payload,
     cookie: getCookieHeader(response) || cookie,
+    clientRequestId,
   };
+}
+
+async function cancelChatStream(input, question, cookie, cancelAfter) {
+  const clientRequestId = randomUUID();
+  const response = await fetchWithTimeout({
+    url: `${input.baseUrl}/api/chat`,
+    method: "POST",
+    timeoutMs: input.timeoutMs,
+    cookie,
+    body: JSON.stringify({ question, clientRequestId }),
+  });
+  const reader = response.body?.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let start = null;
+  let firstDelta = "";
+
+  if (reader) {
+    readLoop: while (true) {
+      const { value, done } = await reader.read();
+
+      if (done) {
+        break;
+      }
+
+      buffer += decoder.decode(value, { stream: true });
+      let lineBreakIndex = buffer.indexOf("\n");
+
+      while (lineBreakIndex >= 0) {
+        const line = buffer.slice(0, lineBreakIndex).trim();
+        buffer = buffer.slice(lineBreakIndex + 1);
+
+        if (line.startsWith("data: ")) {
+          const payload = line.slice("data: ".length);
+
+          if (payload && payload !== "[DONE]") {
+            try {
+              const event = JSON.parse(payload);
+
+              if (event?.type === "data-chatStart") {
+                start = event.data;
+
+                if (cancelAfter === "start") {
+                  await reader.cancel("runtime no-output cancellation check");
+                  break readLoop;
+                }
+              }
+
+              if (event?.type === "text-delta" && event.delta) {
+                firstDelta = event.delta;
+
+                if (cancelAfter === "text") {
+                  await reader.cancel("runtime partial cancellation check");
+                  break readLoop;
+                }
+              }
+            } catch {
+              // The runtime assertion below will report missing structured events.
+            }
+          }
+        }
+
+        lineBreakIndex = buffer.indexOf("\n");
+      }
+    }
+  }
+
+  return {
+    response,
+    clientRequestId,
+    cookie: getCookieHeader(response) || cookie,
+    start,
+    firstDelta,
+  };
+}
+
+async function waitForTurnSettlement(input, question, cookie, clientRequestId) {
+  let settled = null;
+
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    await delay(200);
+    const result = await postChat(input, question, cookie, { clientRequestId });
+
+    if (result.response.status === 409 && result.json?.code === "TURN_IN_PROGRESS") {
+      continue;
+    }
+
+    settled = result;
+    break;
+  }
+
+  return settled;
 }
 
 async function createPalmImage(input, cookie) {
@@ -692,17 +962,20 @@ async function runRuntimeChecks(result, input) {
     });
     const payJson = await readJson(payResponse);
     let cookie = getCookieHeader(payResponse) || loginCookie;
+    const paidBalance = payJson?.transaction?.balanceAfter;
     const payReady =
       payResponse.status === 200 &&
       payJson?.ok === true &&
-      payJson?.transaction?.amount === 350 &&
-      payJson?.transaction?.balanceAfter === 350;
+      typeof payJson?.transaction?.amount === "number" &&
+      payJson.transaction.amount > 0 &&
+      typeof paidBalance === "number" &&
+      paidBalance >= payJson.transaction.amount;
 
     addRuntimeCheck(result, {
       id: "runtime-pay-membership-order",
       label: "支付后发放星力",
       ready: payReady,
-      readyDetail: "月度会员支付后发放 350 星力，可用于 AI 对话。",
+      readyDetail: `月度会员支付后发放 ${payJson?.transaction?.amount ?? 0} 星力，可用于 AI 对话。`,
       blockingDetail: `status=${payResponse.status}, amount=${payJson?.transaction?.amount}, balance=${payJson?.transaction?.balanceAfter}`,
       readyAction: "继续调用 /api/chat。",
       blockingAction: "检查 mock 支付成功后的星力发放和会话刷新。",
@@ -712,30 +985,39 @@ async function runRuntimeChecks(result, input) {
       return;
     }
 
-    const tarot = await postChat(
-      input,
-      "我想问和前任还有机会复合吗？用塔罗三牌阵看看。",
-      cookie,
-    );
+    const tarotQuestion = "我想问和前任还有机会复合吗？用塔罗三牌阵看看。";
+    const tarot = await postChat(input, tarotQuestion, cookie, { serviceMode: "formal" });
     cookie = tarot.cookie;
+    const tarotToolCards = findTool(tarot.json, "tarot_spread_generator")?.result?.cards ?? [];
+    const tarotRitualItems = tarot.stream?.ritualItems?.filter((item) => item.kind === "tarot_card") ?? [];
+    const tarotRitualAligned =
+      tarotToolCards.length === 3 &&
+      tarotRitualItems.length === 3 &&
+      tarotRitualItems.every((item, index) =>
+        item.title === tarotToolCards[index]?.card &&
+        item.position === tarotToolCards[index]?.position &&
+        item.orientation === tarotToolCards[index]?.orientation &&
+        item.meaning === tarotToolCards[index]?.meaning,
+      );
     const tarotReady =
       tarot.response.status === 200 &&
       tarot.json?.ok === true &&
       tarot.json?.intent === "tarot" &&
-      tarot.json?.cost === 1 &&
+      tarot.json?.cost === 12 &&
       typeof tarot.json?.costCents === "number" &&
-      tarot.json?.balanceAfter === 349 &&
+      tarot.json?.balanceAfter === paidBalance - 12 &&
       hasStep(tarot.json, "调用命理工具") &&
       hasTool(tarot.json, "intent_classifier", "completed") &&
       hasTool(tarot.json, "profile_reader") &&
-      hasTool(tarot.json, "tarot_spread_generator", "completed");
+      hasTool(tarot.json, "tarot_spread_generator", "completed") &&
+      tarotRitualAligned;
 
     addRuntimeCheck(result, {
       id: "runtime-chat-tarot",
       label: "塔罗对话工具链",
       ready: tarotReady,
-      readyDetail: "塔罗问题会识别 intent、读取档案、抽牌并扣 1 星力。",
-      blockingDetail: `status=${tarot.response.status}, intent=${tarot.json?.intent}, balance=${tarot.json?.balanceAfter}, costCents=${tarot.json?.costCents}, hasTarot=${hasTool(tarot.json, "tarot_spread_generator")}`,
+      readyDetail: "正式塔罗问事会识别 intent、读取档案、逐张翻牌，且动画牌面与工具结果逐项一致。",
+      blockingDetail: `status=${tarot.response.status}, intent=${tarot.json?.intent}, balance=${tarot.json?.balanceAfter}, costCents=${tarot.json?.costCents}, hasTarot=${hasTool(tarot.json, "tarot_spread_generator")}, aligned=${tarotRitualAligned}`,
       readyAction: "保留塔罗工具链和前端过程展示。",
       blockingAction: "检查 detectIntent、tarot_spread_generator 和 /api/chat 扣费返回。",
     });
@@ -744,16 +1026,104 @@ async function runRuntimeChecks(result, input) {
       tarot.response.status === 200 &&
       tarot.stream?.started === true &&
       tarot.stream?.completed === true &&
-      (tarot.stream?.deltaCount > 0 || tarot.stream?.replaceCount > 0);
+      tarot.stream?.deltaCount > 0 &&
+      ["classify", "profile", "tool", "ritual", "answer"].every((step) =>
+        tarot.stream?.progressSteps?.includes(step),
+      ) &&
+      tarot.stream?.ritualKinds?.filter((kind) => kind === "tarot_card").length === 3 &&
+      tarot.stream?.ritualBeforeText === true;
 
     addRuntimeCheck(result, {
       id: "runtime-chat-streaming-output",
       label: "Chat 回答流式传输",
       ready: tarotStreamReady,
-      readyDetail: `Chat 返回 NDJSON 事件流，共 ${tarot.stream?.deltaCount ?? 0} 个增量片段。`,
-      blockingDetail: `contentType=${tarot.stream?.contentType ?? "<none>"}, started=${tarot.stream?.started}, deltas=${tarot.stream?.deltaCount}, replaces=${tarot.stream?.replaceCount}, completed=${tarot.stream?.completed}`,
-      readyAction: "保留 start/delta/complete 事件协议和客户端增量渲染。",
-      blockingAction: "检查 /api/chat 是否返回 application/x-ndjson，以及模型流是否产生 delta 或本地 replace 事件。",
+      readyDetail: `Chat 返回 AI SDK SSE、五段真实进度和 3 张塔罗牌，共 ${tarot.stream?.deltaCount ?? 0} 个平滑文本片段。`,
+      blockingDetail: `started=${tarot.stream?.started}, deltas=${tarot.stream?.deltaCount}, progress=${tarot.stream?.progressSteps?.join("/")}, ritual=${tarot.stream?.ritualKinds?.join("/")}`,
+      readyAction: "保留 AI SDK start/text-delta/data-chatComplete/finish 事件协议。",
+      blockingAction: "检查 /api/chat 是否返回 AI SDK text/event-stream，以及结构化校验后是否产生 text-delta。",
+    });
+
+    const tarotReplay = await postChat(input, tarotQuestion, cookie, {
+      clientRequestId: tarot.clientRequestId,
+      serviceMode: "formal",
+    });
+    cookie = tarotReplay.cookie;
+    const replayReady =
+      tarotReplay.response.status === 200 &&
+      tarotReplay.json?.ok === true &&
+      tarotReplay.json?.replayed === true &&
+      tarotReplay.json?.turnId === tarot.json?.turnId &&
+      tarotReplay.json?.chatSessionId === tarot.json?.chatSessionId &&
+      tarotReplay.json?.balanceAfter === tarot.json?.balanceAfter;
+
+    addRuntimeCheck(result, {
+      id: "runtime-chat-idempotent-replay",
+      label: "重复请求幂等重放",
+      ready: replayReady,
+      readyDetail: "相同 clientRequestId 会直接重放已保存回答，轮次、会话和余额均保持不变。",
+      blockingDetail: `status=${tarotReplay.response.status}, replayed=${tarotReplay.json?.replayed}, sameTurn=${tarotReplay.json?.turnId === tarot.json?.turnId}, balance=${tarotReplay.json?.balanceAfter}`,
+      readyAction: "保留 AiTurn 幂等键和 result 快照重放。",
+      blockingAction: "检查 reserveChatTurn 是否在模型调用前识别并重放已完成轮次。",
+    });
+
+    const mismatch = await postChat(input, "换一个不同的问题", cookie, {
+      clientRequestId: tarot.clientRequestId,
+    });
+    const mismatchReady =
+      mismatch.response.status === 409 &&
+      mismatch.json?.ok === false &&
+      mismatch.json?.code === "IDEMPOTENCY_MISMATCH";
+
+    addRuntimeCheck(result, {
+      id: "runtime-chat-idempotency-mismatch",
+      label: "幂等键内容冲突拒绝",
+      ready: mismatchReady,
+      readyDetail: "同一 clientRequestId 携带不同问题会返回 409，不会复用旧结果或再次扣费。",
+      blockingDetail: `status=${mismatch.response.status}, code=${mismatch.json?.code}`,
+      readyAction: "保留 requestHash 一致性校验。",
+      blockingAction: "检查 requestHash 与 IDEMPOTENCY_MISMATCH 分支。",
+    });
+
+    const tarotSessionId = tarot.json?.chatSessionId;
+    const tarotFollowUp = await postChat(
+      input,
+      "第二张牌具体代表什么？继续结合刚才的牌阵说。",
+      cookie,
+      { sessionId: tarotSessionId },
+    );
+    cookie = tarotFollowUp.cookie;
+    const reusedTarotTool = findTool(tarotFollowUp.json, "tarot_spread_generator");
+    const transcriptResponse = typeof tarotSessionId === "string"
+      ? await fetchWithTimeout({
+          url: `${input.baseUrl}/api/chat/sessions/${encodeURIComponent(tarotSessionId)}`,
+          timeoutMs: input.timeoutMs,
+          cookie,
+        })
+      : null;
+    const transcriptJson = transcriptResponse ? await readJson(transcriptResponse) : null;
+    const transcriptMessages = Array.isArray(transcriptJson?.chat?.messages)
+      ? transcriptJson.chat.messages
+      : [];
+    const multiTurnReady =
+      tarotFollowUp.response.status === 200 &&
+      tarotFollowUp.json?.ok === true &&
+      tarotFollowUp.json?.chatSessionId === tarotSessionId &&
+      tarotFollowUp.json?.intent === "tarot" &&
+      tarotFollowUp.json?.balanceAfter === paidBalance - 13 &&
+      String(reusedTarotTool?.label ?? "").includes("沿用本会话结果") &&
+      transcriptResponse?.status === 200 &&
+      transcriptMessages.length === 4 &&
+      transcriptMessages[0]?.content?.includes("前任") &&
+      transcriptMessages[2]?.content?.includes("第二张牌");
+
+    addRuntimeCheck(result, {
+      id: "runtime-chat-true-multi-turn",
+      label: "同一会话连续追问",
+      ready: multiTurnReady,
+      readyDetail: "第二轮保持同一 Session，沿用首轮牌阵，完整 Transcript 已增长为 4 条消息。",
+      blockingDetail: `status=${tarotFollowUp.response.status}, sameSession=${tarotFollowUp.json?.chatSessionId === tarotSessionId}, intent=${tarotFollowUp.json?.intent}, reused=${String(reusedTarotTool?.label ?? "").includes("沿用")}, transcript=${transcriptMessages.length}`,
+      readyAction: "保留 sessionId、角色化历史、工具复用和完整会话 GET。",
+      blockingAction: "检查 /api/chat sessionId、saveChatTurn 追加逻辑和会话详情 GET。",
     });
 
     const bazi = await postChat(input, "帮我看八字五行事业方向。", cookie);
@@ -762,7 +1132,7 @@ async function runRuntimeChecks(result, input) {
       bazi.response.status === 200 &&
       bazi.json?.ok === true &&
       bazi.json?.intent === "bazi" &&
-      bazi.json?.balanceAfter === 348 &&
+      bazi.json?.balanceAfter === paidBalance - 14 &&
       hasTool(bazi.json, "bazi_calculator") === false &&
       hasTool(bazi.json, "birth_info_checker", "needs_input") &&
       String(bazi.json?.answer ?? "").includes("出生");
@@ -777,48 +1147,154 @@ async function runRuntimeChecks(result, input) {
       blockingAction: "检查八字工具链在缺出生日期/时间/地点时是否返回 needs_input。",
     });
 
-    const baziProfileReader = findTool(bazi.json, "profile_reader");
-    const baziProfileResult = baziProfileReader?.result;
-    const baziProfileText = JSON.stringify(baziProfileResult ?? {});
-    const baziRecentMemoryReady =
+    const baziSessionId = bazi.json?.chatSessionId;
+    const completedBazi = await postChat(
+      input,
+      "1995-08-18 09:30，出生地上海。",
+      cookie,
+      { sessionId: baziSessionId },
+    );
+    cookie = completedBazi.cookie;
+    const baziChart = findTool(completedBazi.json, "bazi_calculator")?.result?.chart;
+    const baziPillars = completedBazi.stream?.ritualItems?.find((item) => item.kind === "bazi_pillars");
+    const baziWuxing = completedBazi.stream?.ritualItems?.find((item) => item.kind === "bazi_wuxing");
+    const baziRitualAligned =
+      Array.isArray(baziChart?.bazi) &&
+      JSON.stringify(baziPillars?.pillars) === JSON.stringify(baziChart.bazi.slice(0, 4)) &&
+      JSON.stringify(baziWuxing?.counts) === JSON.stringify(baziChart.counts);
+    const completedBaziReady =
+      completedBazi.response.status === 200 &&
+      completedBazi.json?.ok === true &&
+      completedBazi.json?.intent === "bazi" &&
+      completedBazi.json?.chatSessionId === baziSessionId &&
+      completedBazi.json?.balanceAfter === paidBalance - 15 &&
+      hasTool(completedBazi.json, "bazi_calculator", "completed") &&
+      completedBazi.stream?.ritualKinds?.includes("bazi_pillars") &&
+      completedBazi.stream?.ritualKinds?.includes("bazi_wuxing") &&
+      baziRitualAligned;
+
+    addRuntimeCheck(result, {
+      id: "runtime-chat-bazi-ritual-alignment",
+      label: "八字命盘数据一致",
+      ready: completedBaziReady,
+      readyDetail: "补齐出生信息后，动画四柱与五行计数和排盘工具结果逐项一致。",
+      blockingDetail: `status=${completedBazi.response.status}, intent=${completedBazi.json?.intent}, balance=${completedBazi.json?.balanceAfter}, hasBazi=${hasTool(completedBazi.json, "bazi_calculator")}, ritual=${completedBazi.stream?.ritualKinds?.join("/")}, aligned=${baziRitualAligned}`,
+      readyAction: "保留同一份 ritualItems 同时供八字动画和模型解释使用。",
+      blockingAction: "检查 bazi_calculator、buildChatRitualItems 与模型输入是否共享同一排盘快照。",
+    });
+
+    const changedBazi = await postChat(
+      input,
+      "请根据我的八字分析事业方向。我的出生信息是：2000-07-07 09:30，出生地太原。",
+      cookie,
+      { sessionId: baziSessionId },
+    );
+    cookie = changedBazi.cookie;
+    const changedBaziTool = findTool(changedBazi.json, "bazi_calculator");
+    const changedBaziChart = changedBaziTool?.result?.chart;
+    const changedBaziReady =
+      changedBazi.response.status === 200 &&
+      changedBazi.json?.ok === true &&
+      changedBazi.json?.intent === "bazi" &&
+      changedBazi.json?.balanceAfter === paidBalance - 16 &&
+      changedBaziChart?.input?.birthDate === "2000-07-07" &&
+      JSON.stringify(changedBaziChart?.bazi) !== JSON.stringify(baziChart?.bazi) &&
+      String(changedBaziTool?.label ?? "").includes("沿用") === false;
+
+    addRuntimeCheck(result, {
+      id: "runtime-chat-bazi-new-birth-recalculates",
+      label: "新出生信息重新排盘",
+      ready: changedBaziReady,
+      readyDetail: "同一会话更换出生日期后会重新排盘，当前输入优先于历史生日，四柱不再沿用旧结果。",
+      blockingDetail: `status=${changedBazi.response.status}, intent=${changedBazi.json?.intent}, balance=${changedBazi.json?.balanceAfter}, birth=${changedBaziChart?.input?.birthDate}, old=${JSON.stringify(baziChart?.bazi)}, next=${JSON.stringify(changedBaziChart?.bazi)}, label=${changedBaziTool?.label}`,
+      readyAction: "保留当前出生信息优先和仅上下文追问复用排盘的规则。",
+      blockingAction: "检查 parseBirth 当前问题优先级与 findReusableTool 的上下文追问条件。",
+    });
+
+    const otherPersonBazi = await postChat(
+      input,
+      "请分析我朋友小林的八字。她的出生信息是：1988-03-12 14:20，出生地杭州。",
+      cookie,
+      { sessionId: baziSessionId },
+    );
+    cookie = otherPersonBazi.cookie;
+    const otherPersonBaziTool = findTool(otherPersonBazi.json, "bazi_calculator");
+    const otherPersonProfileResult = findTool(otherPersonBazi.json, "profile_reader")?.result;
+    const otherPersonContext = otherPersonBazi.json?.contextSummary;
+    const otherPersonAnswer = String(otherPersonBazi.json?.answer ?? "");
+    const otherPersonBaziReady =
+      otherPersonBazi.response.status === 200 &&
+      otherPersonBazi.json?.ok === true &&
+      otherPersonBazi.json?.intent === "bazi" &&
+      otherPersonBazi.json?.balanceAfter === paidBalance - 17 &&
+      otherPersonContext?.readingSubject?.kind === "other" &&
+      otherPersonContext?.readingSubject?.memberProfileRole === "none" &&
+      otherPersonContext?.userProfile?.memberProfileRole === "none" &&
+      otherPersonContext?.userProfile?.appliesToReadingSubject === false &&
+      otherPersonProfileResult?.completeness === 0 &&
+      otherPersonBaziTool?.result?.chart?.input?.birthDate === "1988-03-12" &&
+      String(otherPersonBaziTool?.label ?? "").includes("沿用") === false &&
+      otherPersonAnswer.includes("你的四柱") === false;
+
+    addRuntimeCheck(result, {
+      id: "runtime-chat-other-person-profile-boundary",
+      label: "替他人问事时隔离本人档案",
+      ready: otherPersonBaziReady,
+      readyDetail: "替朋友排八字时会识别朋友为问事对象，排除账号本人档案，并只使用朋友本轮提供的出生信息。",
+      blockingDetail: `status=${otherPersonBazi.response.status}, intent=${otherPersonBazi.json?.intent}, balance=${otherPersonBazi.json?.balanceAfter}, subject=${JSON.stringify(otherPersonContext?.readingSubject)}, role=${otherPersonContext?.userProfile?.memberProfileRole}, birth=${otherPersonBaziTool?.result?.chart?.input?.birthDate}, label=${otherPersonBaziTool?.label}`,
+      readyAction: "保留 readingSubject、memberProfileRole 和跨对象工具结果隔离。",
+      blockingAction: "检查问事对象识别、本人档案排除和同会话切换对象时的上下文清理。",
+    });
+
+    const baziProfileResult = findTool(bazi.json, "profile_reader")?.result;
+    const baziSessionIsolationReady =
       bazi.response.status === 200 &&
       bazi.json?.ok === true &&
       typeof baziProfileResult === "object" &&
       baziProfileResult !== null &&
-      baziProfileResult.recentChatCount >= 1 &&
-      baziProfileText.includes("我想问和前任还有机会复合吗") &&
-      baziProfileText.includes("tarot_spread_generator");
+      baziProfileResult.conversationMessageCount === 0 &&
+      JSON.stringify(baziProfileResult).includes("前任") === false;
 
     addRuntimeCheck(result, {
-      id: "runtime-chat-recent-memory-used",
-      label: "AI 读取近期对话记忆",
-      ready: baziRecentMemoryReady,
-      readyDetail: "第二轮对话的 profile_reader 已读取上一轮塔罗问题和工具记录。",
-      blockingDetail: `status=${bazi.response.status}, count=${baziProfileResult?.recentChatCount}, hasPreviousQuestion=${baziProfileText.includes("我想问和前任还有机会复合吗")}`,
-      readyAction: "保留 runAiChat 的近期对话读取，形成可复用会员记忆。",
-      blockingAction: "检查 runAiChat 是否在调用工具前读取 getRecentChatSessions，并写入 profile_reader.result。",
+      id: "runtime-chat-new-session-isolation",
+      label: "新会话上下文隔离",
+      ready: baziSessionIsolationReady,
+      readyDetail: "未携带 sessionId 的八字问题不会混入上一段塔罗会话。",
+      blockingDetail: `status=${bazi.response.status}, count=${baziProfileResult?.conversationMessageCount}, leaked=${JSON.stringify(baziProfileResult ?? {}).includes("前任")}`,
+      readyAction: "保留当前 Session 历史与跨会话记忆的边界。",
+      blockingAction: "检查 prepareAiChat 是否只接收服务端加载的当前 Session history。",
     });
 
     const bagua = await postChat(
       input,
-      "我是否应该接下这个新项目？请起卦问事。",
+      "请为“我是否应该接受 A 公司的 offer”起一卦，重点看未来三个月。",
       cookie,
     );
     cookie = bagua.cookie;
+    const baguaChart = findTool(bagua.json, "bagua_generator")?.result?.chart;
+    const baguaRitualItems = bagua.stream?.ritualItems?.filter((item) => item.kind === "bagua_stage") ?? [];
+    const baguaRitualAligned =
+      baguaRitualItems.length === 3 &&
+      baguaRitualItems[0]?.title === `本卦 · ${baguaChart?.mainHexagram?.name}` &&
+      baguaRitualItems[1]?.title === `动爻 · ${baguaChart?.moving?.position}` &&
+      baguaRitualItems[2]?.title === `变卦 · ${baguaChart?.changedHexagram?.name}`;
     const baguaReady =
       bagua.response.status === 200 &&
       bagua.json?.ok === true &&
       bagua.json?.intent === "bagua" &&
-      bagua.json?.balanceAfter === 347 &&
+      bagua.json?.answerShape === "decision_ab" &&
+      bagua.json?.balanceAfter === paidBalance - 18 &&
       hasStep(bagua.json, "生成专属回复") &&
-      hasTool(bagua.json, "bagua_generator", "completed");
+      hasTool(bagua.json, "bagua_generator", "completed") &&
+      bagua.stream?.ritualKinds?.filter((kind) => kind === "bagua_stage").length === 3 &&
+      baguaRitualAligned;
 
     addRuntimeCheck(result, {
       id: "runtime-chat-bagua",
       label: "八卦问事工具链",
       ready: baguaReady,
-      readyDetail: "八卦问事会生成本卦、动爻和变卦，并返回专属回复。",
-      blockingDetail: `status=${bagua.response.status}, intent=${bagua.json?.intent}, balance=${bagua.json?.balanceAfter}, hasBagua=${hasTool(bagua.json, "bagua_generator")}`,
+      readyDetail: "用户自然说“起一卦/是否应该”会进入八卦链路，动画的本卦、动爻、变卦与模型工具结果逐项一致。",
+      blockingDetail: `status=${bagua.response.status}, intent=${bagua.json?.intent}, shape=${bagua.json?.answerShape}, balance=${bagua.json?.balanceAfter}, hasBagua=${hasTool(bagua.json, "bagua_generator")}, ritual=${bagua.stream?.ritualKinds?.join("/")}, aligned=${baguaRitualAligned}`,
       readyAction: "保留八卦工具链和过程步骤。",
       blockingAction: "检查 bagua_generator 和对应 intent 判断。",
     });
@@ -851,14 +1327,15 @@ async function runRuntimeChecks(result, input) {
       cookie,
       { palmImageId },
     );
+    cookie = palm.cookie;
     const palmReady =
       palm.response.status === 200 &&
       palm.json?.ok === true &&
       palm.json?.intent === "palm" &&
-      palm.json?.balanceAfter === 346 &&
+      palm.json?.balanceAfter === paidBalance - 19 &&
       hasTool(palm.json, "palm_image_checker", "completed") &&
-      String(palm.json?.answer ?? "").includes("会员手相额度") &&
-      String(palm.json?.answer ?? "").includes("/palm");
+      findTool(palm.json, "palm_image_checker")?.result?.nextAction === "/palm" &&
+      String(palm.json?.answer ?? "").trim().length > 0;
 
     addRuntimeCheck(result, {
       id: "runtime-chat-palm-attachment",
@@ -870,6 +1347,162 @@ async function runRuntimeChecks(result, input) {
       blockingAction: "检查 /api/chat 图片归属校验、runAiChat palmImage 入参和 palm_image_checker 返回。",
     });
 
+    const identity = await postChat(input, "你是什么模型", cookie);
+    cookie = identity.cookie;
+    const identityAnswer = String(identity.json?.answer ?? "");
+    const forbiddenIdentityTerms = [
+      "OpenAI",
+      "ChatGPT",
+      "GPT-",
+      "general",
+      "工具结果",
+      "意图分类",
+      "命理推演",
+    ];
+    const identityReady =
+      identity.response.status === 200 &&
+      identity.json?.ok === true &&
+      identity.json?.balanceAfter === paidBalance - 20 &&
+      identityAnswer.startsWith("我是玄机 AI") &&
+      identity.json?.toolCalls?.length === 0 &&
+      forbiddenIdentityTerms.every((term) => !identityAnswer.includes(term));
+
+    addRuntimeCheck(result, {
+      id: "runtime-chat-product-identity",
+      label: "产品身份答复保护",
+      ready: identityReady,
+      readyDetail: "模型身份问题只返回玄机 AI 产品口径，没有供应商、内部意图或工具机制泄露。",
+      blockingDetail: `status=${identity.response.status}, balance=${identity.json?.balanceAfter}, tools=${identity.json?.toolCalls?.length}, answer=${identityAnswer.slice(0, 120)}`,
+      readyAction: "保留身份问题的固定答复和模型调用短路。",
+      blockingAction: "检查 getProtectedProductAnswer、fixedAnswer 和 /api/chat 本地流式分支。",
+    });
+
+    const concurrentFirstPromise = postChat(
+      input,
+      "你是什么模型",
+      cookie,
+      { sessionId: tarotSessionId },
+    );
+    await delay(40);
+    const concurrentSecond = await postChat(
+      input,
+      "同一个会话里同时再问一个问题",
+      cookie,
+      { sessionId: tarotSessionId },
+    );
+    const concurrentFirst = await concurrentFirstPromise;
+    cookie = concurrentFirst.cookie;
+    const concurrentReady =
+      concurrentFirst.response.status === 200 &&
+      concurrentFirst.json?.ok === true &&
+      concurrentSecond.response.status === 409 &&
+      concurrentSecond.json?.code === "SESSION_BUSY" &&
+      concurrentFirst.json?.balanceAfter === paidBalance - 21;
+
+    addRuntimeCheck(result, {
+      id: "runtime-chat-session-lock",
+      label: "同一会话并发锁",
+      ready: concurrentReady,
+      readyDetail: "同一 Session 的第二个并发请求返回 SESSION_BUSY，首个请求正常完成且只扣一轮。",
+      blockingDetail: `first=${concurrentFirst.response.status}/${concurrentFirst.json?.balanceAfter}, second=${concurrentSecond.response.status}/${concurrentSecond.json?.code}`,
+      readyAction: "保留 AiSession.activeTurnId 条件锁。",
+      blockingAction: "检查 reserveChatTurn 的 activeTurnId 锁定与释放。",
+    });
+
+    const noOutputQuestion = "测试首段输出前取消，请简短回答。";
+    const noOutputAbort = await cancelChatStream(
+      input,
+      noOutputQuestion,
+      cookie,
+      "start",
+    );
+    cookie = noOutputAbort.cookie;
+    const noOutputSettled = await waitForTurnSettlement(
+      input,
+      noOutputQuestion,
+      cookie,
+      noOutputAbort.clientRequestId,
+    );
+    const noOutputTranscriptResponse = noOutputAbort.start?.chatSessionId
+      ? await fetchWithTimeout({
+          url: `${input.baseUrl}/api/chat/sessions/${encodeURIComponent(noOutputAbort.start.chatSessionId)}`,
+          timeoutMs: input.timeoutMs,
+          cookie,
+        })
+      : null;
+    const noOutputTranscript = noOutputTranscriptResponse
+      ? await readJson(noOutputTranscriptResponse)
+      : null;
+    const noOutputMessages = Array.isArray(noOutputTranscript?.chat?.messages)
+      ? noOutputTranscript.chat.messages
+      : [];
+    const noOutputReady =
+      noOutputAbort.response.status === 200 &&
+      noOutputAbort.start?.balanceAfter === paidBalance - 22 &&
+      noOutputSettled?.response.status === 409 &&
+      noOutputSettled?.json?.code === "TURN_ALREADY_FAILED" &&
+      noOutputSettled?.json?.balance === paidBalance - 21 &&
+      noOutputTranscriptResponse?.status === 200 &&
+      noOutputMessages.length === 0;
+
+    addRuntimeCheck(result, {
+      id: "runtime-chat-no-output-refund",
+      label: "无输出取消自动退款",
+      ready: noOutputReady,
+      readyDetail: "首段文本前取消会进入 CANCELLED/FAILED 终态、退回本轮星力，失败消息不进入 Transcript。",
+      blockingDetail: `startBalance=${noOutputAbort.start?.balanceAfter}, status=${noOutputSettled?.response.status}, code=${noOutputSettled?.json?.code}, refundBalance=${noOutputSettled?.json?.balance}, transcript=${noOutputMessages.length}`,
+      readyAction: "保留无输出 failChatTurn 退款和历史过滤。",
+      blockingAction: "检查 onAbort 无文本分支、退款账本和 failed/cancelled 消息过滤。",
+    });
+
+    const partialQuestion = "请分点说明未来三个月提升工作效率的方法。";
+    const partialAbort = await cancelChatStream(
+      input,
+      partialQuestion,
+      cookie,
+      "text",
+    );
+    cookie = partialAbort.cookie;
+    const partialReplay = await waitForTurnSettlement(
+      input,
+      partialQuestion,
+      cookie,
+      partialAbort.clientRequestId,
+    );
+    const partialTranscriptResponse = partialAbort.start?.chatSessionId
+      ? await fetchWithTimeout({
+          url: `${input.baseUrl}/api/chat/sessions/${encodeURIComponent(partialAbort.start.chatSessionId)}`,
+          timeoutMs: input.timeoutMs,
+          cookie,
+        })
+      : null;
+    const partialTranscript = partialTranscriptResponse
+      ? await readJson(partialTranscriptResponse)
+      : null;
+    const partialMessages = Array.isArray(partialTranscript?.chat?.messages)
+      ? partialTranscript.chat.messages
+      : [];
+    const partialReady =
+      partialAbort.response.status === 200 &&
+      partialAbort.firstDelta.length > 0 &&
+      partialReplay?.response.status === 200 &&
+      partialReplay?.json?.ok === true &&
+      partialReplay?.json?.replayed === true &&
+      partialReplay?.json?.turnStatus === "PARTIAL" &&
+      partialReplay?.json?.balanceAfter === paidBalance - 22 &&
+      partialMessages.length === 2 &&
+      String(partialMessages[1]?.content ?? "").trim().length > 0;
+
+    addRuntimeCheck(result, {
+      id: "runtime-chat-partial-settlement",
+      label: "部分回答保存并结算",
+      ready: partialReady,
+      readyDetail: "收到文本后取消会保存 PARTIAL 回答并保持单轮扣费，相同请求可直接重放部分结果。",
+      blockingDetail: `delta=${partialAbort.firstDelta.length}, status=${partialReplay?.response.status}, turnStatus=${partialReplay?.json?.turnStatus}, balance=${partialReplay?.json?.balanceAfter}, transcript=${partialMessages.length}`,
+      readyAction: "保留 PARTIAL 完成事务和结果快照重放。",
+      blockingAction: "检查 onAbort 有文本分支、PARTIAL 消息落库与 replay。",
+    });
+
     const chatPageResponse = await fetchWithTimeout({
       url: `${input.baseUrl}/chat`,
       timeoutMs: input.timeoutMs,
@@ -879,16 +1512,14 @@ async function runRuntimeChecks(result, input) {
     const chatHistoryReady =
       chatPageResponse.status === 200 &&
       chatPageText.includes("最近对话") &&
-      chatPageText.includes("会员记忆沉淀") &&
-      chatPageText.includes("我上传了手掌照片") &&
-      chatPageText.includes("个工具");
+      chatPageText.includes("我上传了手掌照片");
 
     addRuntimeCheck(result, {
       id: "runtime-chat-history-visible",
       label: "聊天页最近对话可见",
       ready: chatHistoryReady,
       readyDetail: "聊天页能看到刚完成的 AI 对话历史和工具数量。",
-      blockingDetail: `status=${chatPageResponse.status}, hasRecent=${chatPageText.includes("最近对话")}, hasMemory=${chatPageText.includes("会员记忆沉淀")}, hasQuestion=${chatPageText.includes("我上传了手掌照片")}`,
+      blockingDetail: `status=${chatPageResponse.status}, hasRecent=${chatPageText.includes("最近对话")}, hasQuestion=${chatPageText.includes("我上传了手掌照片")}`,
       readyAction: "保留 /chat 的最近对话展示。",
       blockingAction: "检查 ChatPage 是否传入 initialRecentChats，ChatClient 是否渲染最近对话。",
     });
@@ -901,17 +1532,16 @@ async function runRuntimeChecks(result, input) {
     const memberPageText = normalizeHtmlText(await memberPageResponse.text());
     const memberHistoryReady =
       memberPageResponse.status === 200 &&
-      memberPageText.includes("会员记忆沉淀") &&
-      memberPageText.includes("最近 AI 对话") &&
-      memberPageText.includes("我上传了手掌照片") &&
-      memberPageText.includes("个工具");
+      memberPageText.includes("最近对话") &&
+      memberPageText.includes("完整对话到 Chat 里继续") &&
+      memberPageText.includes("我上传了手掌照片");
 
     addRuntimeCheck(result, {
       id: "runtime-member-chat-history-visible",
       label: "会员中心最近 AI 对话可见",
       ready: memberHistoryReady,
       readyDetail: "会员中心能看到刚完成的 AI 对话摘要，形成可见会员资产。",
-      blockingDetail: `status=${memberPageResponse.status}, hasMemory=${memberPageText.includes("会员记忆沉淀")}, hasRecent=${memberPageText.includes("最近 AI 对话")}, hasQuestion=${memberPageText.includes("我上传了手掌照片")}`,
+      blockingDetail: `status=${memberPageResponse.status}, hasRecent=${memberPageText.includes("最近对话")}, hasQuestion=${memberPageText.includes("我上传了手掌照片")}`,
       readyAction: "保留 /member 的 AI 对话历史模块。",
       blockingAction: "检查 MemberPage 是否读取 getRecentChatSessions 并渲染会员记忆沉淀。",
     });

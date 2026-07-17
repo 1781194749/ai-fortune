@@ -42,44 +42,44 @@ const planMeta: Partial<Record<ProductCode, { eyebrow: string; promise: string; 
     promise: "适合第一次认识玄机，从建档、提问到报告完整走一遍。",
   },
   monthly: {
-    eyebrow: "稳定的日常陪伴",
-    promise: "适合每周持续问事，让档案和对话记忆逐渐形成上下文。",
+    eyebrow: "一个月稳定陪伴",
+    promise: "适合把这个月反复出现的问题持续追问，结合手相、报告和基础档案记忆形成上下文。",
     badge: "最多人选择",
   },
   pro_monthly: {
-    eyebrow: "高频深度推演",
-    promise: "适合正在经历重要阶段，希望更频繁使用报告和手相的人。",
+    eyebrow: "高频深度复盘",
+    promise: "适合更高频的追问、报告和手相分析，把长期记忆与多轮推演结合起来。",
     badge: "深度用户",
   },
   yearly: {
-    eyebrow: "一个重要阶段，连续看 30 天",
-    promise: "适合正在做重要决定的人。围绕一个核心主题持续跟进，每周复盘变化，30 天后沉淀阶段结论。",
-    badge: "完整体验",
+    eyebrow: "全年档案沉淀",
+    promise: "适合希望持续记录全年主题、每月报告和长期档案变化的用户。",
+    badge: "长期陪伴",
   },
 };
 
 const membershipValues = [
   {
     icon: MessageCircle,
-    title: "持续追问",
-    detail: "不用每次重新解释背景，围绕同一个问题继续推演。",
+    title: "天是轻入口",
+    detail: "每天从一个小问题进入，不把会员价值押在大量刷新额度上。",
   },
   {
     icon: Bot,
-    title: "自动选择方式",
-    detail: "AI 会判断该聊天、抽牌、起卦，还是读取你的命盘。",
+    title: "周是复盘点",
+    detail: "每周把变化、反复出现的信号和下一步问题重新整理一遍。",
   },
   {
     icon: FileText,
-    title: "报告长期沉淀",
-    detail: "重要判断保存为报告，之后可以回看、补充和继续追问。",
+    title: "月是陪伴期",
+    detail: "一个月内持续读取档案、对话和报告，让判断越来越贴近你的处境。",
   },
 ] as const;
 
 const faqs = [
   {
     question: "星力是什么？",
-    answer: "星力用于 AI 对话、塔罗、八卦、手相和深度报告等推演。不同能力消耗不同，使用前会显示所需星力。",
+    answer: "星力是服务消耗单位，用于 AI 对话、塔罗、八卦、手相和深度报告等推演。会员核心不是每天刷新大量星力，而是持续档案、复盘和阶段陪伴。",
   },
   {
     question: "开通后会记住哪些信息？",
@@ -122,40 +122,53 @@ function localLivePaymentGate() {
   } as const;
 }
 
-function getMembershipIntent(value: string | string[] | undefined, products: Product[]) {
+function getMembershipIntent(value: string | string[] | undefined, membershipProducts: Product[]) {
   const intent = Array.isArray(value) ? value[0] : value;
-  return products.find((product) => product.code === intent);
+  return membershipProducts.find((product) => product.code === intent);
 }
 
 function getPlanBenefits(product: Product) {
-  const benefits = [
-    `${product.starGrant ?? 0} 星力，用于日常推演`,
+  if (product.code === "trial_7d") {
+    return [
+      "7 天内建立档案与每日轻问事",
+      `包含 ${product.starGrant ?? 0} 星力追问余量`,
+      `${product.reportQuota ?? 0} 份报告额度 + ${product.palmQuota ?? 0} 次手相浅析额度`,
+    ];
+  }
+
+  if (product.code === "yearly") {
+    return [
+      "全年档案、主题报告和长期记忆",
+      "适合持续跟进年度事业、感情与行动节奏",
+      "自动关联历史 Chat，不用重复解释背景",
+      `包含 ${product.starGrant ?? 0} 星力追问余量、${product.reportQuota ?? 0} 份深度报告、${product.palmQuota ?? 0} 次手相`,
+    ];
+  }
+
+  if (product.code === "monthly") {
+    return [
+      "30 天持续问事与档案记忆",
+      "每周整理一次近期问题脉络",
+      `包含 ${product.starGrant ?? 0} 星力追问余量`,
+      `${product.reportQuota ?? 0} 份深度报告额度 + ${product.palmQuota ?? 0} 次手相分析额度`,
+    ];
+  }
+
+  return [
+    "月内高频追问与复盘",
+    `包含 ${product.starGrant ?? 0} 星力追问余量`,
     `${product.reportQuota ?? 0} 份深度报告额度`,
     `${product.palmQuota ?? 0} 次手相分析额度`,
   ];
-
-  if (product.code === "trial_7d") {
-    benefits.push("7 天内体验完整会员能力");
-  } else if (product.code === "yearly") {
-    return [
-      "锁定 1 个核心主题，连续跟进 30 天",
-      "每满 7 天生成 1 次 AI 周复盘",
-      "30 天结束生成阶段总结与下一步",
-      "自动关联历史 Chat，不用重复解释背景",
-      `${product.starGrant ?? 0} 星力 + ${product.reportQuota ?? 0} 份深度报告 + ${product.palmQuota ?? 0} 次手相`,
-    ];
-  } else if (product.code === "pro_monthly") {
-    benefits.push("更适合高频对话与深度分析");
-  } else {
-    benefits.push("基础档案记忆与历史沉淀");
-  }
-
-  return benefits;
 }
 
 function getPlanUnit(product: Product) {
   if (product.code === "trial_7d") {
     return "/ 7 天";
+  }
+
+  if (product.code === "yearly") {
+    return "/ 年";
   }
 
   return "/ 月";
@@ -185,9 +198,7 @@ export default async function PricingPage({
   const livePaymentGate = features.paymentProvider === "live"
     ? await getLivePaymentLaunchGate({ user: session ?? undefined })
     : localLivePaymentGate();
-  const visibleMembershipProducts = membershipProducts.filter(
-    (product) => product.code !== "trial_7d",
-  );
+  const visibleMembershipProducts = membershipProducts;
   const selectedPlan = getMembershipIntent(intent, visibleMembershipProducts);
 
   return (
@@ -290,7 +301,7 @@ export default async function PricingPage({
               {session ? (
                 <div className="mt-5 flex items-center justify-between border-t border-[#292a24] pt-5 text-sm">
                   <span className="text-[#777168]">当前星力</span>
-                  <span className="font-semibold text-[#efd9a6]">{session.starBalance} 星力</span>
+                  <span className="font-semibold text-[#efd9a6]">{session.starBalance} 星力可用</span>
                 </div>
               ) : null}
             </div>
@@ -302,8 +313,8 @@ export default async function PricingPage({
         <div className="mx-auto max-w-[1280px]">
           <div className="mx-auto max-w-3xl text-center">
             <p className="text-xs tracking-[0.26em] text-[#c9a35f]">MEMBERSHIP PLANS</p>
-            <h2 className="mt-4 font-ritual text-4xl tracking-[-0.03em] sm:text-5xl">从免费体验，到更深的月度陪伴</h2>
-            <p className="mt-5 text-sm leading-7 text-[#8f887b] sm:text-base">基础方案解决一次次具体问题，99 元方案会围绕一个重要主题持续跟进 30 天。</p>
+            <h2 className="mt-4 font-ritual text-4xl tracking-[-0.03em] sm:text-5xl">免费轻问，月度陪伴，关键阶段跟进</h2>
+            <p className="mt-5 text-sm leading-7 text-[#8f887b] sm:text-base">天是轻入口，周是复盘点，月是陪伴期。99 元方案会围绕一个重要主题持续跟进 30 天。</p>
           </div>
 
           {selectedPlan ? (
@@ -348,7 +359,7 @@ export default async function PricingPage({
             </div>
           ) : null}
 
-          <div className="mt-12 grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+          <div className="mt-12 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
             <article className="relative flex scroll-mt-28 flex-col rounded-[28px] border border-[#3b6258] bg-[#0f1512] p-6 transition duration-300 hover:-translate-y-1 hover:border-[#79b8b1]/60">
               <span className="absolute right-5 top-5 rounded-full border border-[#3b6258] bg-[#2c7b78]/12 px-3 py-1 text-[10px] font-semibold tracking-[0.08em] text-[#79b8b1]">
                 永久免费
@@ -366,8 +377,8 @@ export default async function PricingPage({
 
               <div className="mt-6 space-y-3 border-t border-[#29423a] pt-5">
                 {[
-                  `新用户赠送 ${freeStarterStarGrant} 星力`,
-                  "约 5–10 次基础 AI 问事",
+                  `新用户赠送 ${freeStarterStarGrant} 星力轻问余量`,
+                  "每天从一个小问题进入",
                   "每日单牌塔罗免费体验",
                   "档案与推演记录持续保留",
                 ].map((benefit) => (
@@ -380,10 +391,10 @@ export default async function PricingPage({
 
               <div className="mt-auto pt-1">
                 <Link
-                  href={session ? "/chat" : createLoginHref("/onboarding")}
+                  href={session ? "/chat" : createLoginHref("/chat")}
                   className="mt-6 inline-flex h-12 w-full items-center justify-center gap-2 rounded-full border border-[#79b8b1]/45 bg-[#2c7b78]/12 px-5 text-sm font-semibold text-[#a5d2cc] transition hover:border-[#79b8b1]/70 hover:bg-[#2c7b78]/18"
                 >
-                  {session ? "进入免费版" : "免费注册体验"}
+                  {session ? "进入免费版" : "免费注册并进入 Chat"}
                   <ArrowRight size={16} aria-hidden="true" />
                 </Link>
               </div>
@@ -464,7 +475,7 @@ export default async function PricingPage({
                         href={createLoginHref(`/pricing?intent=${product.code}#plans`)}
                         className={`mt-6 inline-flex h-12 w-full items-center justify-center gap-2 rounded-full px-5 text-sm font-semibold transition ${featured ? "bg-[#c9a35f] text-[#17130d] hover:bg-[#efd9a6]" : "border border-[#c9a35f]/45 bg-[#c9a35f]/8 text-[#efd9a6] hover:border-[#c9a35f]/70"}`}
                       >
-                        {product.code === "yearly" ? "登录后开启 30 天陪伴" : "登录后选择"}
+                        {product.code === "yearly" ? "登录后开启年度会员" : "登录后选择"}
                         <ArrowRight size={16} aria-hidden="true" />
                       </Link>
                     )}
@@ -567,10 +578,10 @@ export default async function PricingPage({
           <h2 className="mt-6 font-ritual text-4xl sm:text-5xl">从第一次具体的问题开始</h2>
           <p className="mx-auto mt-5 max-w-2xl text-sm leading-8 text-[#8f887b]">先建立你的档案，再把最近真正困扰你的事情告诉玄机。会员只是让这段陪伴走得更久、更深。</p>
           <Link
-            href={session ? "/chat" : createLoginHref("/onboarding")}
+            href={session ? "/chat" : createLoginHref("/chat")}
             className="mt-8 inline-flex h-13 items-center justify-center gap-2 rounded-full bg-[#c9a35f] px-8 font-semibold text-[#17130d] transition hover:bg-[#efd9a6]"
           >
-            {session ? "进入 Chat 开始问事" : "起盘并建立档案"}
+            {session ? "进入 Chat 开始问事" : "登录后直接进入 Chat"}
             <ArrowRight size={17} aria-hidden="true" />
           </Link>
         </div>

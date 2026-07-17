@@ -52,24 +52,31 @@ type CaseTemplate = Omit<
 
 const templates = [
   {
-    id: "auth-email-member-profile",
+    id: "auth-google-member-profile",
     group: "账号与档案",
-    title: "邮箱登录、会员中心和命理档案保存",
+    title: "Google 登录、Chat 首屏和命理档案保存",
     owner: "产品 / 测试",
-    goal: "确认新用户能完成邮箱登录，进入会员中心，并保存出生信息和长期关注主题。",
-    routes: ["/login", "/member", "/api/auth/email/request", "/api/auth/email/verify", "/api/profile"],
+    goal: "确认新用户能完成 Google 邮箱登录，直接进入 Chat，并可继续保存出生信息和长期关注主题。",
+    routes: ["/login", "/chat", "/member", "/api/auth/google", "/api/auth/google/callback", "/api/profile"],
     steps: [
-      "用测试邮箱请求验证码并完成登录。",
-      "进入会员中心，保存称呼、生日、出生时间、出生地和关注主题。",
-      "刷新页面后重新进入会员中心。",
+      "用测试 Google 账号完成登录。",
+      "确认登录成功后直接进入 /chat。",
+      "从 Chat 或会员中心补充称呼、生日、出生时间、出生地和关注主题。",
+      "刷新页面后重新进入 Chat 和档案页。",
     ],
     expected: [
-      "登录后进入 /member。",
+      "登录后直接进入 /chat。",
       "会员档案保存成功并展示八字/五行摘要。",
       "刷新后档案仍可读取。",
     ],
-    evidence: "保留登录成功、会员中心档案和刷新后档案仍存在的截图或录屏。",
-    relatedCheckIds: ["env:AUTH_EMAIL_ENABLED", "env:DATABASE_URL", "persistence:database"],
+    evidence: "保留登录成功后进入 Chat、档案保存和刷新后档案仍存在的截图或录屏。",
+    relatedCheckIds: [
+      "env:AUTH_GOOGLE_ENABLED",
+      "env:GOOGLE_CLIENT_ID",
+      "env:GOOGLE_CLIENT_SECRET",
+      "env:DATABASE_URL",
+      "persistence:database",
+    ],
   },
   {
     id: "ai-chat-profile-memory",

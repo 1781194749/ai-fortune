@@ -4,6 +4,7 @@ import { isAdminUserId } from "@/lib/admin-auth";
 import { getFortuneProfile } from "@/lib/fortune-profile-store";
 import { getInviteRewardSummary } from "@/lib/invite-rewards";
 import { createLoginHref } from "@/lib/return-to";
+import { isChatReadingMethod } from "@/lib/chat-service";
 import { getSession } from "@/lib/session";
 import { ChatClient } from "./chat-client";
 
@@ -27,11 +28,18 @@ function getWuxingSummary(value: unknown) {
     .join(" · ");
 }
 
-export default async function ChatPage() {
+export default async function ChatPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ method?: string | string[] }>;
+}) {
+  const { method: rawMethod } = await searchParams;
+  const requestedMethod = Array.isArray(rawMethod) ? rawMethod[0] : rawMethod;
+  const initialReadingMethod = isChatReadingMethod(requestedMethod) ? requestedMethod : undefined;
   const session = await getSession();
 
   if (!session) {
-    redirect(createLoginHref("/chat"));
+    redirect(createLoginHref(initialReadingMethod ? `/chat?method=${initialReadingMethod}` : "/chat"));
   }
 
   const [recentChats, profile, canAccessAdmin, inviteRewardSummary] = await Promise.all([
@@ -45,6 +53,7 @@ export default async function ChatPage() {
     <ChatClient
       initialBalance={session.starBalance}
       initialRecentChats={recentChats}
+      initialReadingMethod={initialReadingMethod}
       inviteUrl={inviteRewardSummary.inviteUrl}
       account={{ email: session.emailMasked, tier: session.tier, canAccessAdmin }}
       profile={{

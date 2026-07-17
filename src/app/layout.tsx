@@ -5,14 +5,14 @@ import { Toaster } from "@/components/ui/sonner";
 export const metadata: Metadata = {
   title: "玄机 AI - 看得见推演过程的 AI 命理顾问",
   description:
-    "玄机 AI 融合塔罗、八字五行、八卦问事、手相解读和深度报告，提供可追问、可沉淀的 AI 命理体验。",
+    "玄机 AI 融合塔罗、八字命盘、六十四卦问事、手相解读和深度报告，提供可追问、可沉淀的 AI 命理体验。",
   applicationName: "玄机 AI",
   keywords: [
     "玄机 AI",
     "Xuanji AI",
     "AI 算命",
     "塔罗占卜",
-    "八字五行",
+    "八字命盘",
     "手相解读",
   ],
 };
@@ -23,7 +23,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="zh-CN" className="h-full font-sans antialiased" data-scroll-behavior="smooth">
+    <html
+      lang="zh-CN"
+      className="h-full font-sans antialiased"
+      data-scroll-behavior="smooth"
+      suppressHydrationWarning
+    >
       <body className="min-h-full">
         {children}
         <Toaster position="top-center" richColors />

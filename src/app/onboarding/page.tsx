@@ -15,7 +15,7 @@ export default async function OnboardingPage({
   const session = await getSession();
 
   if (!session) {
-    redirect(createLoginHref("/onboarding"));
+    redirect(createLoginHref("/chat"));
   }
 
   const { edit: rawEdit } = await searchParams;

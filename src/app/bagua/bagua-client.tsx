@@ -2,7 +2,11 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { BadgeCheck, Coins, Hexagon, Loader2 } from "lucide-react";
+import { Coins, Hexagon, Loader2 } from "lucide-react";
+import {
+  QuestionProcessPanel,
+  type QuestionProcessState,
+} from "@/app/_components/question-process-panel";
 import { getStarCostLabel } from "@/lib/commerce";
 
 type Trigram = {
@@ -14,7 +18,13 @@ type Trigram = {
 };
 
 type Hexagram = {
+  number: number;
   name: string;
+  nature: string;
+  judgment: string;
+  image: string;
+  advice: string;
+  topicAdvice: string;
   upper: Trigram;
   lower: Trigram;
   relation: string;
@@ -27,10 +37,26 @@ type BaguaChart = {
   movingLine: number;
   moving: {
     position: string;
+    stage: string;
+    yinYang: string;
+    role: string;
+    text: string;
     advice: string;
   };
+  yao: Array<{
+    index: number;
+    position: string;
+    stage: string;
+    yinYang: string;
+    active: boolean;
+    moving: boolean;
+    role: string;
+  }>;
   mainHexagram: Hexagram;
   changedHexagram: Hexagram;
+  mutualHexagram: Hexagram;
+  oppositeHexagram: Hexagram;
+  reversedHexagram: Hexagram;
 };
 
 type BaguaReport = {
@@ -47,6 +73,14 @@ type BaguaResult = {
   chart: BaguaChart;
   report: BaguaReport;
 };
+
+const baguaProcessSteps = [
+  { label: "确定问事主题", detail: "把问题压到一个明确对象和时间范围里。" },
+  { label: "生成六爻卦象", detail: "形成本次问事的六爻结构。" },
+  { label: "定位六十四卦", detail: "识别本卦在六十四卦中的卦名、序号和卦意。" },
+  { label: "识别动爻互错综", detail: "找到变化位置，并展开互卦、错卦和综卦视角。" },
+  { label: "生成问事建议", detail: "把卦象变化翻译成可执行的下一步。" },
+] as const;
 
 function LineView({ active }: { active: boolean }) {
   return (
@@ -70,11 +104,13 @@ export function BaguaClient({ initialBalance }: { initialBalance: number }) {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState(`本次消耗 ${getStarCostLabel("bagua_question")}。`);
   const [result, setResult] = useState<BaguaResult | null>(null);
+  const [processState, setProcessState] = useState<QuestionProcessState>("idle");
 
   async function ask() {
     setLoading(true);
     setResult(null);
-    setMessage("正在起卦并识别动爻...");
+    setProcessState("running");
+    setMessage("已开始八卦问事，正在确定主题、起卦并识别变化线索。");
 
     const response = await fetch("/api/fortune/bagua", {
       method: "POST",
@@ -89,7 +125,8 @@ export function BaguaClient({ initialBalance }: { initialBalance: number }) {
 
     if (!response.ok || data.ok === false) {
       const failure = data as { ok: false; message?: string; balance?: number };
-      setMessage(failure.message ?? "八卦问事失败。");
+      setProcessState("error");
+      setMessage(failure.message ?? "八卦问事没有完成，本次不会生成报告。");
       if (typeof failure.balance === "number") {
         setBalance(failure.balance);
       }
@@ -97,8 +134,9 @@ export function BaguaClient({ initialBalance }: { initialBalance: number }) {
     }
 
     setResult(data);
+    setProcessState("success");
     setBalance(data.balanceAfter);
-    setMessage(`本次消耗 ${data.cost} 星力，剩余 ${data.balanceAfter} 星力。`);
+    setMessage(`八卦问事已完成，本次服务消耗 ${data.cost} 星力，剩余 ${data.balanceAfter} 星力。`);
   }
 
   return (
@@ -147,28 +185,24 @@ export function BaguaClient({ initialBalance }: { initialBalance: number }) {
         <p className="mt-3 text-sm text-[#b9ad99]">{message}</p>
       </section>
 
-      <section className="rounded-lg border border-[#3a3023] bg-[#12100d] p-5">
-        <p className="text-sm font-semibold text-[#c8a15a]">问事过程</p>
-        <div className="mt-4 grid gap-3 md:grid-cols-4">
-          {(result?.steps ?? ["确定问事主题", "生成六爻卦象", "识别动爻变卦", "生成问事建议"]).map(
-            (step, index) => (
-              <div
-                key={step}
-                className="rounded-md border border-[#2f261a] bg-[#080705] p-3"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="flex size-7 items-center justify-center rounded-md bg-[#c8a15a]/12 text-sm text-[#f0d49a]">
-                    {index + 1}
-                  </span>
-                  {result ? (
-                    <BadgeCheck className="text-[#3c8b72]" size={17} aria-hidden="true" />
-                  ) : null}
-                </div>
-                <p className="mt-3 text-sm text-[#d8cab2]">{step}</p>
-              </div>
-            ),
-          )}
-        </div>
+      <div>
+        <QuestionProcessPanel
+          title="问事过程"
+          service={{
+            type: "八卦问事",
+            method: "明确主题 + 六爻起卦 + 动爻变卦",
+            cost: getStarCostLabel("bagua_question"),
+            output: "六十四卦详解 + 行动建议",
+          }}
+          steps={baguaProcessSteps}
+          state={processState}
+          completedSteps={result?.steps}
+          resultTitle={result?.report.title}
+          resultSummary={result?.report.summary}
+          nextActions={["继续追问动爻含义", "查看完整报告", "带回 Chat 跟进变化"]}
+          errorMessage={processState === "error" ? message : undefined}
+          onRetry={loading ? undefined : () => void ask()}
+        />
 
         {result ? (
           <div className="mt-6 space-y-5">
@@ -176,11 +210,11 @@ export function BaguaClient({ initialBalance }: { initialBalance: number }) {
               <div className="rounded-lg border border-[#4a3a25] bg-[#080705] p-5">
                 <p className="text-sm text-[#b9ad99]">六爻</p>
                 <div className="mt-4 flex flex-col-reverse gap-3">
-                  {result.chart.lines.map((line, index) => (
-                    <div key={`${line}-${index}`} className="flex items-center gap-3">
-                      <span className="w-10 text-xs text-[#b9ad99]">{index + 1}爻</span>
-                      <LineView active={line === 1} />
-                      {result.chart.movingLine === index + 1 ? (
+                  {result.chart.yao.map((yao) => (
+                    <div key={`${yao.position}-${yao.index}`} className="flex items-center gap-3">
+                      <span className="w-10 text-xs text-[#b9ad99]">{yao.position}</span>
+                      <LineView active={yao.active} />
+                      {yao.moving ? (
                         <span className="rounded-md bg-[#c8a15a] px-2 py-1 text-xs font-semibold text-[#130f09]">
                           动
                         </span>
@@ -196,19 +230,57 @@ export function BaguaClient({ initialBalance }: { initialBalance: number }) {
                     key={`${hexagram.name}-${index}`}
                     className="rounded-lg border border-[#3a3023] bg-[#080705] p-5"
                   >
-                    <p className="text-sm text-[#b9ad99]">{index === 0 ? "本卦" : "变卦"}</p>
+                    <p className="text-sm text-[#b9ad99]">{index === 0 ? "本卦" : "变卦"} · 第 {hexagram.number} 卦</p>
                     <h3 className="mt-2 font-ritual text-3xl text-[#fff7e8]">
                       {hexagram.name}
                     </h3>
                     <p className="mt-3 text-sm text-[#f0d49a]">
                       {hexagram.upper.symbol} {hexagram.upper.name} / {hexagram.lower.symbol} {hexagram.lower.name}
                     </p>
+                    <p className="mt-2 text-sm text-[#f0d49a]">{hexagram.nature}</p>
                     <p className="mt-3 text-sm leading-7 text-[#d8cab2]">
-                      {hexagram.relationAdvice}
+                      {hexagram.judgment}
+                    </p>
+                    <p className="mt-3 text-xs leading-6 text-[#b9ad99]">
+                      {hexagram.topicAdvice}
                     </p>
                   </article>
                 ))}
               </div>
+            </div>
+
+            <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+              <article className="rounded-lg border border-[#3a3023] bg-[#080705] p-5">
+                <p className="text-sm text-[#b9ad99]">动爻</p>
+                <h2 className="mt-2 font-ritual text-3xl text-[#fff7e8]">
+                  {result.chart.moving.position} · {result.chart.moving.yinYang}
+                </h2>
+                <p className="mt-3 text-sm leading-7 text-[#d8cab2]">{result.chart.moving.text}</p>
+                <p className="mt-3 border-t border-[#2f261a] pt-3 text-sm leading-7 text-[#f0d49a]">
+                  {result.chart.moving.advice}
+                </p>
+              </article>
+
+              <article className="rounded-lg border border-[#3a3023] bg-[#080705] p-5">
+                <p className="text-sm text-[#b9ad99]">内外关系</p>
+                <h2 className="mt-2 font-ritual text-3xl text-[#fff7e8]">{result.chart.mainHexagram.relation}</h2>
+                <p className="mt-3 text-sm leading-7 text-[#d8cab2]">{result.chart.mainHexagram.relationAdvice}</p>
+              </article>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-3">
+              {[
+                { label: "互卦", value: result.chart.mutualHexagram },
+                { label: "错卦", value: result.chart.oppositeHexagram },
+                { label: "综卦", value: result.chart.reversedHexagram },
+              ].map((item) => (
+                <article key={item.label} className="rounded-lg border border-[#3a3023] bg-[#080705] p-4">
+                  <p className="text-sm text-[#b9ad99]">{item.label} · 第 {item.value.number} 卦</p>
+                  <h3 className="mt-2 font-ritual text-2xl text-[#fff7e8]">{item.value.name}</h3>
+                  <p className="mt-2 text-xs leading-6 text-[#d8cab2]">{item.value.nature}</p>
+                  <p className="mt-2 text-xs leading-6 text-[#80776a]">{item.value.advice}</p>
+                </article>
+              ))}
             </div>
 
             <article className="rounded-lg border border-[#3a3023] bg-[#080705] p-5">
@@ -232,7 +304,7 @@ export function BaguaClient({ initialBalance }: { initialBalance: number }) {
             八卦问事结果会在这里生成，并同步保存到报告中心。
           </div>
         )}
-      </section>
+      </div>
     </div>
   );
 }

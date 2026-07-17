@@ -52,7 +52,7 @@ function generateSecret(byteLength) {
 function buildEnv(byteLength) {
   return {
     APP_LOCALE: "zh-CN",
-    AUTH_EMAIL_ENABLED: "true",
+    AUTH_EMAIL_ENABLED: "false",
     AUTH_SESSION_SECRET: generateSecret(byteLength),
     ADMIN_DASHBOARD_ENABLED: "true",
     ADMIN_ACCESS_TOKEN: generateSecret(byteLength),

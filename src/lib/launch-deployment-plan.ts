@@ -116,6 +116,12 @@ const deploymentEnvKeys = [
   "ADMIN_ACCESS_TOKEN",
   "DATABASE_URL",
   "AUTH_EMAIL_ENABLED",
+  "AUTH_GOOGLE_ENABLED",
+  "GOOGLE_CLIENT_ID",
+  "GOOGLE_CLIENT_SECRET",
+  "AUTH_WECHAT_ENABLED",
+  "WECHAT_APP_ID",
+  "WECHAT_APP_SECRET",
   "PAYMENT_PROVIDER",
   "PAYMENT_CALLBACK_DEV_BYPASS",
 ];
@@ -429,7 +435,7 @@ function buildSteps(input: {
       action:
         input.envDraft.status === "ready"
           ? "将生产变量草案同步到部署平台，并保留脱敏截图。"
-          : "优先补齐 APP_URL、会话密钥、后台 token、DATABASE_URL、登录开关和支付模式，再运行预检。",
+          : "优先补齐 APP_URL、会话密钥、后台 token、DATABASE_URL、登录方式和支付模式，再运行预检。",
       evidence:
         evidenceRecordLabel(deployEnvEvidence) ??
         "部署平台环境变量截图；`/api/admin/launch/env-draft` 无 deployment blocking。",

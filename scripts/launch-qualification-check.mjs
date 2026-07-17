@@ -146,6 +146,15 @@ function readProjectFile(root, filename) {
 
   return readFileSync(absolutePath, "utf8");
 }
+function readAdminHealthContent(root) {
+  return [
+    readProjectFile(root, "src/app/admin/health/page.tsx"),
+    readProjectFile(root, "src/app/admin/health/full/page.tsx"),
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 
 function readError(error) {
   if (error instanceof Error) {
@@ -268,7 +277,7 @@ function checkStaticWiring(result, root) {
   const compliancePlan = readProjectFile(root, "src/lib/launch-compliance-plan.ts");
   const paymentPlan = readProjectFile(root, "src/lib/launch-payment-plan.ts");
   const livePaymentGate = readProjectFile(root, "src/lib/live-payment-launch-gate.ts");
-  const healthPage = readProjectFile(root, "src/app/admin/health/page.tsx");
+  const healthPage = readAdminHealthContent(root);
   const packageJson = readProjectFile(root, "package.json");
   const docs = [
     "README.md",

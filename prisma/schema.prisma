@@ -79,6 +79,14 @@ enum MessageRole {
   TOOL
 }
 
+enum AiTurnStatus {
+  GENERATING
+  COMPLETED
+  PARTIAL
+  FAILED
+  CANCELLED
+}
+
 enum ReportType {
   TAROT
   PALM
@@ -94,6 +102,14 @@ enum ReportStatus {
   FAILED
 }
 
+enum DeepReportJobStatus {
+  PENDING_DISPATCH
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
 enum ImageKind {
   PALM
   AVATAR
@@ -101,24 +117,25 @@ enum ImageKind {
 }
 
 model User {
-  id           String              @id @default(cuid())
-  email        String?             @unique
-  displayName  String?
-  avatarUrl    String?
-  locale       String              @default("zh-CN")
-  createdAt    DateTime            @default(now())
-  updatedAt    DateTime            @updatedAt
-  accounts     AuthAccount[]
-  profile      FortuneProfile?
-  memberships  Membership[]
-  orders       Order[]
-  walletEvents WalletTransaction[]
+  id                  String                   @id @default(cuid())
+  email               String?                  @unique
+  displayName         String?
+  avatarUrl           String?
+  locale              String                   @default("zh-CN")
+  createdAt           DateTime                 @default(now())
+  updatedAt           DateTime                 @updatedAt
+  accounts            AuthAccount[]
+  profile             FortuneProfile?
+  memberships         Membership[]
+  orders              Order[]
+  walletEvents        WalletTransaction[]
   entitlementAccounts EntitlementAccount[]
-  entitlementEvents EntitlementTransaction[]
-  sessions     AiSession[]
-  reports      Report[]
-  imageUploads ImageUpload[]
-  usageLogs    UsageLog[]
+  entitlementEvents   EntitlementTransaction[]
+  sessions            AiSession[]
+  reports             Report[]
+  deepReportJobs      DeepReportJob[]
+  imageUploads        ImageUpload[]
+  usageLogs           UsageLog[]
 }
 
 model AuthAccount {
@@ -174,6 +191,7 @@ model Membership {
 model WalletTransaction {
   id           String          @id @default(cuid())
   userId       String
+  turnId       String?
   type         WalletEventType
   amount       Int
   balanceAfter Int
@@ -183,10 +201,12 @@ model WalletTransaction {
   metadata     Json?
   createdAt    DateTime        @default(now())
   user         User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  turn         AiTurn?         @relation(fields: [turnId], references: [id], onDelete: SetNull)
   order        Order?          @relation(fields: [orderId], references: [id])
   report       Report?         @relation(fields: [reportId], references: [id])
 
   @@index([userId, createdAt])
+  @@index([turnId])
 }
 
 model EntitlementAccount {
@@ -204,7 +224,7 @@ model EntitlementAccount {
 }
 
 model EntitlementTransaction {
-  id             String                @id @default(cuid())
+  id             String               @id @default(cuid())
   accountId      String
   userId         String
   kind           EntitlementKind
@@ -214,13 +234,13 @@ model EntitlementTransaction {
   reason         String
   orderId        String?
   reportId       String?
-  idempotencyKey String?               @unique
+  idempotencyKey String?              @unique
   metadata       Json?
-  createdAt      DateTime              @default(now())
-  account        EntitlementAccount    @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  user           User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  order          Order?                @relation(fields: [orderId], references: [id])
-  report         Report?               @relation(fields: [reportId], references: [id])
+  createdAt      DateTime             @default(now())
+  account        EntitlementAccount   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  user           User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  order          Order?               @relation(fields: [orderId], references: [id])
+  report         Report?              @relation(fields: [reportId], references: [id])
 
   @@index([userId, kind, createdAt])
   @@index([orderId])
@@ -228,46 +248,82 @@ model EntitlementTransaction {
 }
 
 model Order {
-  id              String              @id @default(cuid())
-  userId          String
-  provider        PaymentProvider
-  status          OrderStatus         @default(PENDING)
-  productCode     String
-  productName     String
-  amountCents     Int
-  currency        String              @default("CNY")
-  providerOrderId String?
-  notifyPayload   Json?
-  paidAt          DateTime?
-  createdAt       DateTime            @default(now())
-  updatedAt       DateTime            @updatedAt
-  user            User                @relation(fields: [userId], references: [id], onDelete: Cascade)
-  walletEvents    WalletTransaction[]
+  id                String                   @id @default(cuid())
+  userId            String
+  provider          PaymentProvider
+  status            OrderStatus              @default(PENDING)
+  productCode       String
+  productName       String
+  amountCents       Int
+  currency          String                   @default("CNY")
+  providerOrderId   String?
+  notifyPayload     Json?
+  paidAt            DateTime?
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
+  user              User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  walletEvents      WalletTransaction[]
   entitlementEvents EntitlementTransaction[]
-  reports         Report[]
+  reports           Report[]
+  deepReportJobs    DeepReportJob[]
 
   @@index([userId, status])
   @@index([provider, providerOrderId])
 }
 
 model AiSession {
-  id        String      @id @default(cuid())
-  userId    String
-  mode      SessionMode
-  title     String
-  metadata  Json?
-  createdAt DateTime    @default(now())
-  updatedAt DateTime    @updatedAt
-  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  messages  Message[]
-  reports   Report[]
+  id           String      @id @default(cuid())
+  userId       String
+  mode         SessionMode
+  title        String
+  activeTurnId String?
+  metadata     Json?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages     Message[]
+  turns        AiTurn[]
+  reports      Report[]
 
   @@index([userId, updatedAt])
+  @@index([activeTurnId])
+}
+
+model AiTurn {
+  id              String              @id @default(cuid())
+  sessionId       String
+  userId          String
+  sequence        Int
+  clientRequestId String
+  requestHash     String
+  status          AiTurnStatus        @default(GENERATING)
+  costStars       Int
+  refundedStars   Int                 @default(0)
+  provider        String?
+  model           String?
+  usageLogId      String?             @unique
+  errorCode       String?
+  result          Json?
+  startedAt       DateTime            @default(now())
+  completedAt     DateTime?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  session         AiSession           @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  usageLog        UsageLog?           @relation(fields: [usageLogId], references: [id], onDelete: SetNull)
+  messages        Message[]
+  walletEvents    WalletTransaction[]
+
+  @@unique([userId, clientRequestId])
+  @@unique([sessionId, sequence])
+  @@index([sessionId, status])
+  @@index([userId, createdAt])
 }
 
 model Message {
   id         String      @id @default(cuid())
   sessionId  String
+  turnId     String?
+  ordinal    Int?
   role       MessageRole
   content    String
   toolName   String?
@@ -276,34 +332,69 @@ model Message {
   tokensOut  Int?
   createdAt  DateTime    @default(now())
   session    AiSession   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  turn       AiTurn?     @relation(fields: [turnId], references: [id], onDelete: SetNull)
 
+  @@unique([turnId, ordinal])
   @@index([sessionId, createdAt])
+  @@index([turnId])
 }
 
 model Report {
-  id            String              @id @default(cuid())
-  userId        String
-  sessionId     String?
-  orderId       String?
-  type          ReportType
-  status        ReportStatus        @default(GENERATING)
-  title         String
-  summary       String?
-  inputSnapshot Json?
-  toolResults   Json?
-  content       String?
-  modelUsed     String?
-  costTokens    Int?
-  shareSlug     String?             @unique
-  createdAt     DateTime            @default(now())
-  updatedAt     DateTime            @updatedAt
-  user          User                @relation(fields: [userId], references: [id], onDelete: Cascade)
-  session       AiSession?          @relation(fields: [sessionId], references: [id])
-  order         Order?              @relation(fields: [orderId], references: [id])
-  walletEvents  WalletTransaction[]
+  id                String                   @id @default(cuid())
+  userId            String
+  sessionId         String?
+  orderId           String?
+  type              ReportType
+  status            ReportStatus             @default(GENERATING)
+  title             String
+  summary           String?
+  inputSnapshot     Json?
+  toolResults       Json?
+  content           String?
+  modelUsed         String?
+  costTokens        Int?
+  requestKey        String?                  @unique
+  shareSlug         String?                  @unique
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
+  user              User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  session           AiSession?               @relation(fields: [sessionId], references: [id])
+  order             Order?                   @relation(fields: [orderId], references: [id])
+  walletEvents      WalletTransaction[]
   entitlementEvents EntitlementTransaction[]
+  deepReportJob     DeepReportJob?
 
   @@index([userId, type, createdAt])
+}
+
+model DeepReportJob {
+  id              String              @id @default(cuid())
+  requestKey      String              @unique
+  userId          String
+  reportId        String              @unique
+  orderId         String?
+  productCode     String
+  status          DeepReportJobStatus @default(PENDING_DISPATCH)
+  inputSnapshot   Json
+  paymentSource   String?
+  entitlementKind EntitlementKind?
+  attempts        Int                 @default(0)
+  redisJobId      String?
+  lastError       String?
+  queuedAt        DateTime?
+  startedAt       DateTime?
+  completedAt     DateTime?
+  failedAt        DateTime?
+  nextDispatchAt  DateTime?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  user            User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  report          Report              @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  order           Order?              @relation(fields: [orderId], references: [id])
+
+  @@index([status, nextDispatchAt, updatedAt])
+  @@index([userId, createdAt])
+  @@index([orderId])
 }
 
 model ImageUpload {
@@ -323,18 +414,20 @@ model ImageUpload {
 }
 
 model UsageLog {
-  id         String   @id @default(cuid())
-  userId     String?
-  provider   String
-  model      String
-  feature    String
-  tokensIn   Int?
-  tokensOut  Int?
-  imageCount Int      @default(0)
-  costCents  Int?
-  metadata   Json?
-  createdAt  DateTime @default(now())
-  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  id             String   @id @default(cuid())
+  userId         String?
+  provider       String
+  model          String
+  feature        String
+  tokensIn       Int?
+  tokensOut      Int?
+  imageCount     Int      @default(0)
+  costCents      Int?
+  idempotencyKey String?  @unique
+  metadata       Json?
+  createdAt      DateTime @default(now())
+  user           User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  turn           AiTurn?
 
   @@index([userId, createdAt])
   @@index([feature, createdAt])

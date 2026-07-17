@@ -1,5 +1,5 @@
 import { recordAdminAudit } from "@/lib/admin-audit";
-import { canAccessAdmin } from "@/lib/admin-auth";
+import { canAccessAdminRequest } from "@/lib/admin-request";
 import { getChannelBudgetConfigMap } from "@/lib/channel-budget-config";
 import {
   normalizeChannelBudgetReviewDecision,
@@ -11,9 +11,7 @@ import { buildGrowthRoiRows } from "@/lib/growth-roi";
 import { getUsageLogsByFeature } from "@/lib/usage-log-store";
 
 export async function POST(request: Request) {
-  const url = new URL(request.url);
-
-  if (!(await canAccessAdmin(Object.fromEntries(url.searchParams)))) {
+  if (!(await canAccessAdminRequest(request))) {
     return Response.json({ ok: false, message: "无权访问后台。" }, { status: 404 });
   }
 

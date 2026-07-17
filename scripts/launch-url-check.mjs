@@ -204,6 +204,15 @@ function readProjectFile(root, filename) {
 
   return readFileSync(absolutePath, "utf8");
 }
+function readAdminHealthContent(root) {
+  return [
+    readProjectFile(root, "src/app/admin/health/page.tsx"),
+    readProjectFile(root, "src/app/admin/health/full/page.tsx"),
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 
 function buildTargets(env) {
   const adminToken = env.ADMIN_ACCESS_TOKEN?.trim() ?? "";
@@ -469,7 +478,7 @@ function validateDeploymentPlanWiring(result) {
   const root = process.cwd();
   const deploymentPlan = readProjectFile(root, "src/lib/launch-deployment-plan.ts");
   const apiRoute = readProjectFile(root, "src/app/api/admin/launch/deployment-plan/route.ts");
-  const healthPage = readProjectFile(root, "src/app/admin/health/page.tsx");
+  const healthPage = readAdminHealthContent(root);
   const evidenceForm = readProjectFile(
     root,
     "src/app/admin/launch-deployment-acceptance-evidence-form.tsx",

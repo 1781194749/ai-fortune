@@ -75,7 +75,7 @@ const specs = [
     kind: "url",
     statusWhenInvalid: "blocking",
     invalidWhenLocal: true,
-    action: "配置正式 HTTPS 域名，不能使用 localhost 或占位域名。",
+    action: "域名审核通过后配置正式 HTTPS 域名；审核中可先完成本地和内测环境验收。",
   },
   {
     key: "APP_LOCALE",
@@ -141,11 +141,38 @@ const specs = [
   {
     key: "AUTH_EMAIL_ENABLED",
     group: "登录",
-    label: "邮箱登录",
+    label: "邮箱验证码登录",
     kind: "toggle",
-    statusWhenInvalid: "blocking",
+    statusWhenInvalid: "warning",
+    expected: "false",
+    action: "当前生产入口改为 Google 邮箱登录，邮箱验证码暂不作为上线登录方式。",
+  },
+  {
+    key: "AUTH_GOOGLE_ENABLED",
+    group: "登录",
+    label: "Google 登录",
+    kind: "toggle",
+    statusWhenInvalid: "warning",
     expected: "true",
-    action: "第一版至少保持邮箱验证码登录可用。",
+    action: "Google OAuth 就绪后开启，并补齐 Client ID 与 Client Secret。",
+  },
+  {
+    key: "GOOGLE_CLIENT_ID",
+    group: "登录",
+    label: "Google OAuth Client ID",
+    kind: "plain",
+    statusWhenInvalid: "blocking",
+    enabledBy: "AUTH_GOOGLE_ENABLED",
+    action: "Google 登录开启后填写 OAuth Client ID。",
+  },
+  {
+    key: "GOOGLE_CLIENT_SECRET",
+    group: "登录",
+    label: "Google OAuth Client Secret",
+    kind: "secret",
+    statusWhenInvalid: "blocking",
+    enabledBy: "AUTH_GOOGLE_ENABLED",
+    action: "Google 登录开启后填写 OAuth Client Secret，并只放在服务端环境。",
   },
   {
     key: "AUTH_WECHAT_ENABLED",
@@ -187,7 +214,7 @@ const specs = [
     group: "AI 能力",
     label: "OpenAI API Key",
     kind: "secret",
-    statusWhenInvalid: "warning",
+    statusWhenInvalid: "blocking",
     action: "配置生产 API Key，运行模型读取诊断并设置预算上限。",
   },
   {
@@ -203,7 +230,7 @@ const specs = [
     group: "AI 能力",
     label: "默认对话模型",
     kind: "plain",
-    statusWhenInvalid: "warning",
+    statusWhenInvalid: "blocking",
     action: "配置日常对话和命理解读的默认模型。",
   },
   {
@@ -211,7 +238,7 @@ const specs = [
     group: "AI 能力",
     label: "低成本模型",
     kind: "plain",
-    statusWhenInvalid: "warning",
+    statusWhenInvalid: "blocking",
     action: "配置分类、标题、轻量引导等低成本模型。",
   },
   {
@@ -219,7 +246,7 @@ const specs = [
     group: "AI 能力",
     label: "深度报告模型",
     kind: "plain",
-    statusWhenInvalid: "warning",
+    statusWhenInvalid: "blocking",
     action: "配置深度报告使用的高质量模型。",
   },
   {
@@ -227,7 +254,7 @@ const specs = [
     group: "AI 能力",
     label: "手相视觉模型",
     kind: "plain",
-    statusWhenInvalid: "warning",
+    statusWhenInvalid: "blocking",
     action: "配置支持图片输入的视觉模型，并验证七牛公开 URL 可被读取。",
   },
   {
@@ -251,9 +278,9 @@ const specs = [
     group: "支付",
     label: "支付模式",
     kind: "plain",
-    statusWhenInvalid: "blocking",
+    statusWhenInvalid: "warning",
     expected: "live",
-    action: "正式收费前必须切换为 live。",
+    action: "真实支付资质完成前可保持 mock；资质完成后再切换为 live。",
   },
   {
     key: "LIVE_PAYMENT_SMOKE_TEST_USER_IDS",
@@ -300,7 +327,7 @@ const specs = [
     group: "支付宝",
     label: "支付宝 App ID",
     kind: "plain",
-    statusWhenInvalid: "blocking",
+    statusWhenInvalid: "warning",
     enabledBy: "ALIPAY_ENABLED",
     action: "支付宝开放平台应用通过后填写 APP_ID。",
   },
@@ -309,7 +336,7 @@ const specs = [
     group: "支付宝",
     label: "支付宝应用私钥",
     kind: "secret",
-    statusWhenInvalid: "blocking",
+    statusWhenInvalid: "warning",
     enabledBy: "ALIPAY_ENABLED",
     action: "填写应用私钥，注意不要提交到代码仓库。",
   },
@@ -318,7 +345,7 @@ const specs = [
     group: "支付宝",
     label: "支付宝公钥",
     kind: "secret",
-    statusWhenInvalid: "blocking",
+    statusWhenInvalid: "warning",
     enabledBy: "ALIPAY_ENABLED",
     action: "填写支付宝公钥并运行支付宝签名诊断。",
   },
@@ -336,7 +363,7 @@ const specs = [
     group: "微信支付",
     label: "微信支付商户号",
     kind: "plain",
-    statusWhenInvalid: "blocking",
+    statusWhenInvalid: "warning",
     enabledBy: "WECHAT_PAY_ENABLED",
     action: "填写微信支付商户号 mch_id。",
   },
@@ -345,7 +372,7 @@ const specs = [
     group: "微信支付",
     label: "微信支付 API v3 key",
     kind: "secret",
-    statusWhenInvalid: "blocking",
+    statusWhenInvalid: "warning",
     enabledBy: "WECHAT_PAY_ENABLED",
     action: "填写 API v3 key，注意妥善保管。",
   },
@@ -354,7 +381,7 @@ const specs = [
     group: "微信支付",
     label: "微信支付商户私钥",
     kind: "secret",
-    statusWhenInvalid: "blocking",
+    statusWhenInvalid: "warning",
     enabledBy: "WECHAT_PAY_ENABLED",
     action: "填写商户私钥并运行微信支付签名诊断。",
   },
@@ -363,7 +390,7 @@ const specs = [
     group: "微信支付",
     label: "微信支付证书序列号",
     kind: "plain",
-    statusWhenInvalid: "blocking",
+    statusWhenInvalid: "warning",
     enabledBy: "WECHAT_PAY_ENABLED",
     action: "填写商户证书序列号。",
   },
@@ -372,7 +399,7 @@ const specs = [
     group: "微信支付",
     label: "微信支付平台公钥",
     kind: "secret",
-    statusWhenInvalid: "blocking",
+    statusWhenInvalid: "warning",
     enabledBy: "WECHAT_PAY_ENABLED",
     action: "填写平台公钥并验证回调验签链路。",
   },
@@ -637,9 +664,43 @@ function statusRank(status: HealthStatus) {
   return 2;
 }
 
+function readyLoginLabels(env: Env) {
+  return [
+    rawValue(env, "AUTH_GOOGLE_ENABLED") === "true" &&
+    hasConfiguredValue(env, "GOOGLE_CLIENT_ID") &&
+    hasConfiguredValue(env, "GOOGLE_CLIENT_SECRET")
+      ? "Google"
+      : undefined,
+    rawValue(env, "AUTH_WECHAT_ENABLED") === "true" &&
+    hasConfiguredValue(env, "WECHAT_APP_ID") &&
+    hasConfiguredValue(env, "WECHAT_APP_SECRET")
+      ? "微信"
+      : undefined,
+  ].filter(Boolean);
+}
+
+function loginEntry(env: Env, sourceItems: string[]): LaunchEnvChecklistItem {
+  const labels = readyLoginLabels(env);
+  const ready = labels.length > 0;
+
+  return {
+    key: "LOGIN_ANY",
+    group: "登录",
+    label: "至少一个登录方式",
+    kind: "toggle",
+    status: ready ? "ready" : "blocking",
+    state: ready ? "ready" : "missing",
+    stateLabel: ready ? "已配置" : "未配置",
+    displayValue: ready ? `${labels.join("、")}登录可用` : "Google 和微信都未就绪",
+    detail: ready ? "当前至少一种登录方式满足上线核对规则。" : "当前没有可用登录入口。",
+    action: "当前生产入口以 Google 邮箱登录为主；至少配置 Google OAuth，或在微信资质就绪后开启微信登录。",
+    sourceItems,
+  };
+}
+
 export async function getLaunchEnvChecklist(env: Env = process.env) {
   const materials = await getLaunchMaterialPack();
-  const items = specs.map((spec) => {
+  const specItems = specs.map((spec) => {
     const state = classifyState(env, spec);
     const status = statusForState(state, spec);
 
@@ -657,6 +718,19 @@ export async function getLaunchEnvChecklist(env: Env = process.env) {
       sourceItems: sourceItemsForKey(spec.key, materials.items),
     } satisfies LaunchEnvChecklistItem;
   });
+  const items = [
+    ...specItems,
+    loginEntry(
+      env,
+      Array.from(
+        new Set([
+          ...sourceItemsForKey("AUTH_EMAIL_ENABLED", materials.items),
+          ...sourceItemsForKey("AUTH_GOOGLE_ENABLED", materials.items),
+          ...sourceItemsForKey("AUTH_WECHAT_ENABLED", materials.items),
+        ]),
+      ),
+    ),
+  ];
   const nextItems = [...items]
     .filter((item) => item.status !== "ready")
     .sort(

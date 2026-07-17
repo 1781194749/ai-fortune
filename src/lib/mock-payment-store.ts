@@ -29,7 +29,11 @@ import {
   revokeMembershipEntitlementsForOrder,
   type MockEntitlementTransaction,
 } from "@/lib/entitlement-store";
-import { tryPrisma, type PrismaClientInstance } from "@/lib/prisma";
+import {
+  assertDatabaseFallbackAllowed,
+  tryPrisma,
+  type PrismaClientInstance,
+} from "@/lib/prisma";
 import { getProductRuntimeConfigMap } from "@/lib/product-config";
 import type { SessionPayload } from "@/lib/session";
 import type { AppliedPromotion } from "@/lib/promo-code";
@@ -152,9 +156,11 @@ function nowIso() {
 }
 
 function requireCommerceDatabase() {
-  if (process.env.DATABASE_URL) {
-    throw new Error("PostgreSQL 暂时不可用，订单与会员状态未变更。");
-  }
+  assertDatabaseFallbackAllowed("PostgreSQL 暂时不可用，订单与会员状态未变更。");
+}
+
+function requireCommerceDatabaseRead() {
+  assertDatabaseFallbackAllowed("PostgreSQL 暂时不可用，无法读取订单或钱包数据。");
 }
 
 function createOrderId() {
@@ -589,6 +595,8 @@ export async function getMockOrder(orderId: string) {
     return dbResult.value;
   }
 
+  requireCommerceDatabaseRead();
+
   return state.orders.get(orderId) ?? null;
 }
 
@@ -605,6 +613,8 @@ export async function getUserMockOrders(userId: string) {
   if (dbResult.ok) {
     return dbResult.value;
   }
+
+  requireCommerceDatabaseRead();
 
   return Array.from(state.orders.values())
     .filter((order) => order.userId === userId)
@@ -728,6 +738,8 @@ export async function getUserWalletTransactions(userId: string) {
     return dbResult.value;
   }
 
+  requireCommerceDatabaseRead();
+
   return state.walletTransactions
     .filter((transaction) => transaction.userId === userId)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -765,6 +777,11 @@ export async function refundPaidOrder(input: {
     const accountState = await tryPrisma(async (prisma) =>
       getDbAccountState(prisma, order.userId, { tier: "FREE", starBalance: balanceAfter }),
     );
+
+    if (!accountState.ok) {
+      requireCommerceDatabaseRead();
+    }
+
     const entitlementReversal = await revokeMembershipEntitlementsForOrder({
       userId: order.userId,
       orderId: order.id,
@@ -808,6 +825,11 @@ export async function refundPaidOrder(input: {
   const accountStateResult = await tryPrisma(async (prisma) =>
     getDbAccountState(prisma, order.userId, { tier: "FREE", starBalance: 0 }),
   );
+
+  if (!accountStateResult.ok) {
+    requireCommerceDatabaseRead();
+  }
+
   const currentBalance = accountStateResult.ok
     ? accountStateResult.value.starBalance
     : getLatestMemoryWalletBalance(order.userId);
@@ -1269,6 +1291,8 @@ export async function spendStars(
     return dbResult.value;
   }
 
+  requireCommerceDatabase();
+
   if (session.starBalance < input.amount) {
     return { ok: false as const, reason: "INSUFFICIENT_STARS" };
   }
@@ -1362,6 +1386,8 @@ export async function grantOperationalStars(input: {
     return dbResult.value;
   }
 
+  requireCommerceDatabase();
+
   const latestTransaction = state.walletTransactions
     .filter((transaction) => transaction.userId === input.userId)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
@@ -1419,6 +1445,8 @@ export async function getAdminOrders(input: { take?: number } = {}) {
     return dbResult.value;
   }
 
+  requireCommerceDatabaseRead();
+
   return Array.from(state.orders.values())
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     .slice(0, take);
@@ -1438,6 +1466,8 @@ export async function getAdminWalletTransactions(input: { take?: number } = {}) 
   if (dbResult.ok) {
     return dbResult.value;
   }
+
+  requireCommerceDatabaseRead();
 
   return [...state.walletTransactions]
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))

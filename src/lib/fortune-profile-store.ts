@@ -5,7 +5,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { calculateBazi, type BaziInput } from "@/lib/bazi";
 import { formatBirthDate, normalizeBirthCalendarType } from "@/lib/birth-calendar";
-import { tryPrisma } from "@/lib/prisma";
+import { assertDatabaseFallbackAllowed, tryPrisma } from "@/lib/prisma";
 import { ensureDbUser } from "@/lib/user-store";
 
 type NullableText = string | null;
@@ -82,6 +82,14 @@ const localProfileStorePath = join(process.cwd(), ".data", "fortune-profiles.jso
 
 function canUseLocalProfileStore() {
   return process.env.NODE_ENV !== "production";
+}
+
+function requireProfileDatabaseRead() {
+  assertDatabaseFallbackAllowed("PostgreSQL 暂时不可用，无法读取命理档案。");
+}
+
+function requireProfileDatabaseWrite() {
+  assertDatabaseFallbackAllowed("PostgreSQL 暂时不可用，命理档案未保存。");
 }
 
 function isProfileRecord(value: unknown): value is FortuneProfileRecord {
@@ -385,9 +393,15 @@ export async function getFortuneProfile(userId: string) {
     return profile ? mapDbProfile(profile) : null;
   });
 
-  if (dbResult.ok && dbResult.value) {
+  if (dbResult.ok) {
+    if (dbResult.value) {
+      fortuneProfiles.set(userId, dbResult.value);
+    }
+
     return dbResult.value;
   }
+
+  requireProfileDatabaseRead();
 
   await ensureLocalProfilesLoaded();
 
@@ -460,6 +474,8 @@ export async function upsertFortuneProfile(userId: string, input: FortuneProfile
     await persistLocalProfiles();
     return dbResult.value;
   }
+
+  requireProfileDatabaseWrite();
 
   await ensureLocalProfilesLoaded();
   const current = fortuneProfiles.get(userId);

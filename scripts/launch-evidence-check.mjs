@@ -192,6 +192,15 @@ function readProjectFile(root, filename) {
 
   return readFileSync(absolutePath, "utf8");
 }
+function readAdminHealthContent(root) {
+  return [
+    readProjectFile(root, "src/app/admin/health/page.tsx"),
+    readProjectFile(root, "src/app/admin/health/full/page.tsx"),
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 
 function checkFileExists(result, root, filename) {
   const exists = existsSync(path.resolve(root, filename));
@@ -234,7 +243,7 @@ function checkStaticWiring(result, root) {
   );
   const gapRoute = readProjectFile(root, "src/app/api/admin/launch/evidence-gap/route.ts");
   const evidenceActions = readProjectFile(root, "src/app/admin/launch-evidence-actions.tsx");
-  const healthPage = readProjectFile(root, "src/app/admin/health/page.tsx");
+  const healthPage = readAdminHealthContent(root);
   const packageJson = readProjectFile(root, "package.json");
   const docs = [
     "README.md",

@@ -1,7 +1,7 @@
 import "server-only";
 
 import { ensureDbUser } from "@/lib/user-store";
-import { tryPrisma } from "@/lib/prisma";
+import { assertDatabaseFallbackAllowed, tryPrisma } from "@/lib/prisma";
 
 declare global {
   var xuanjiDailyExperienceClaims: Set<string> | undefined;
@@ -71,6 +71,8 @@ export async function claimDailyExperience(input: {
   if (dbResult.ok) {
     return dbResult.value;
   }
+
+  assertDatabaseFallbackAllowed("PostgreSQL 暂时不可用，今日体验未领取。");
 
   if (memoryClaims.has(claimId)) {
     return false;

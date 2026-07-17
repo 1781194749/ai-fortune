@@ -44,7 +44,7 @@ export default async function MemberEntitlementsPage() {
       <PageHeader
         eyebrow="Entitlements"
         title="权益额度"
-        description="集中管理会员身份、报告额度、手相额度和使用进度。"
+        description="集中管理会员身份、陪伴周期、报告额度、手相额度和必要追问余量。"
         action={{ href: "/pricing", label: "管理会员方案", icon: CircleDollarSign }}
       />
 
@@ -95,7 +95,7 @@ export default async function MemberEntitlementsPage() {
             <p className="mt-3 text-sm font-medium text-[#d7dee8]">{lifecycle.endsAt ? formatTime(lifecycle.endsAt) : "未设置"}</p>
           </div>
           <div className="bg-[#101318] p-5">
-            <p className="text-xs text-[#697386]">星力余额</p>
+            <p className="text-xs text-[#697386]">追问余量</p>
             <p className="mt-3 text-sm font-medium text-[#d7dee8]">{session.starBalance} 星力</p>
           </div>
         </div>

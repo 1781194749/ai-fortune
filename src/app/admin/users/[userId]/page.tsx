@@ -116,8 +116,8 @@ function reportStatusClass(status: string) {
 }
 
 function reportTypeLabel(type: string) {
-  if (type === "BAZI_WUXING") return "八字五行";
-  if (type === "BAGUA") return "八卦问事";
+  if (type === "BAZI_WUXING") return "八字命盘";
+  if (type === "BAGUA") return "六十四卦";
   if (type === "PALM") return "手相分析";
   if (type === "COMPOSITE") return "综合报告";
   if (type === "YEARLY") return "年度运势";
@@ -530,11 +530,17 @@ function UserDetailContent({ data }: { data: AdminUserDetailData }) {
 
 export default async function AdminUserDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ userId: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { userId } = await params;
-  const access = await getAdminAccess();
+  const [{ userId }, resolvedSearchParams] = await Promise.all([params, searchParams]);
+  const access = await getAdminAccess(resolvedSearchParams);
+
+  if (!access.enabled) {
+    notFound();
+  }
 
   if (!access.authenticated) {
     redirect(createLoginHref(`/admin/users/${encodeURIComponent(userId)}`, "/admin"));
@@ -565,7 +571,7 @@ export default async function AdminUserDetailPage({
   return (
     <AdminShell
       activeSection="users"
-      adminToken={undefined}
+      adminToken={access.adminToken}
       title={`用户详情 · ${displayName}`}
       description="查看单个用户的档案、订单、权益、报告和模型成本"
       counts={counts}

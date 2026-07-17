@@ -67,6 +67,7 @@ npm run launch:payment-check
 npm run launch:qualification-check
 npm run launch:compliance-check
 npm run launch:production-gate
+npm run launch:core-gate
 npm run launch:production-gate:example
 npm run launch:production-gate-check
 npm run launch:goal-followup-check
@@ -107,6 +108,8 @@ npm run launch:production-gate
 `launch:secrets` prints strong values for `AUTH_SESSION_SECRET` and `ADMIN_ACCESS_TOKEN` without writing them to disk. The preflight script checks production domain, session/admin secrets, PostgreSQL, login, OpenAI, Qiniu, payment mode, real payment channels and compliance fields. It exits with a non-zero code while blocking items remain.
 
 `launch:production-gate` is the final paid-launch gate. It aggregates `launch:preflight`, `launch:db-check -- --schema`, `launch:url-check`, `launch:ai-storage-check`, `launch:compliance-check` and `launch:payment-check`, then prints one Go / No-Go style summary. Blocking items fail the command; warning items must be explained or resolved before wider release. Use `npm run launch:production-gate:example` to preview the gate against `.env.production.example` without calling network checks.
+
+`launch:core-gate` runs the same gate with `--defer-live-payment --defer-qiniu`. Use it when真实支付渠道和七牛云暂缓，但生产域名、数据库、认证、后台保护、OpenAI、合规主体/ICP 和核心功能仍必须达到上线标准. It prints `coreReady=yes` only when those non-deferred checks have no blocking items. For local runtime verification, run `npm run launch:core-gate -- --env .env --allow-local`; local URL and local database checks become warnings, not production approval. It is not a paid-launch replacement; remove the defer flags and run `launch:production-gate` before收费放量或启用七牛图片链路.
 
 Run `npm run launch:production-gate-check` to verify the CLI gate, server-side gate aggregation, launch evidence archive snapshot, `/api/admin/launch/production-gate`, the `production_gate` blocker-dashboard workstream, the final launch decision gate and `/admin/health` production gate panels stay wired together. With a running app, add `-- --base-url=http://localhost:3000` to verify the rendered admin page, production-gate JSON API, launch-decision JSON API, blocker-dashboard JSON API and a production-gate evidence archive write.
 

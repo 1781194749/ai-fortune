@@ -1,6 +1,6 @@
 import { recordAdminAudit } from "@/lib/admin-audit";
 import { isDeepReportProductCode } from "@/lib/deep-report";
-import { retryQueuedDeepReport, startDeepReportJob } from "@/lib/deep-report-job";
+import { retryDeepReport } from "@/lib/deep-report-job";
 import { getMockOrder } from "@/lib/mock-payment-store";
 import { getMockReport } from "@/lib/report-store";
 import { canAccessAdminRequest } from "@/lib/admin-request";
@@ -95,13 +95,14 @@ export async function POST(
   }
 
   if (report.status === "GENERATING") {
-    const started = startDeepReportJob({
+    const retried = await retryDeepReport({
       report,
-      userId: report.userId,
       productCode: order.productCode,
-      orderId: order.id,
+      operator: "admin",
     });
-    const message = started ? "已重新唤起生成任务。" : "生成任务已在队列中。";
+    const message = retried?.dispatchQueued
+      ? "已重新派发生成任务。"
+      : "生成任务已记录，等待队列恢复派发。";
 
     await recordAdminAudit({
       request,
@@ -116,25 +117,25 @@ export async function POST(
       details: {
         productCode: order.productCode,
         reportStatus: report.status,
-        jobStarted: started,
+        dispatchQueued: Boolean(retried?.dispatchQueued),
       },
     });
 
     return Response.json({
       ok: true,
-      report,
-      queued: started,
+      report: retried?.report ?? report,
+      queued: true,
       message,
     });
   }
 
-  const retriedReport = await retryQueuedDeepReport({
+  const retried = await retryDeepReport({
     report,
     productCode: order.productCode,
     operator: "admin",
   });
 
-  if (!retriedReport) {
+  if (!retried) {
     const message = "重试失败。";
 
     await auditFailure(message, {
@@ -150,21 +151,22 @@ export async function POST(
     action: "report_retry",
     status: "queued",
     resourceType: "report",
-    resourceId: retriedReport.id,
-    reportId: retriedReport.id,
+    resourceId: retried.report.id,
+    reportId: retried.report.id,
     orderId: order.id,
-    targetUserId: retriedReport.userId,
+    targetUserId: retried.report.userId,
     message: "已重新进入生成队列。",
     details: {
       productCode: order.productCode,
       previousStatus: report.status,
-      nextStatus: retriedReport.status,
+      nextStatus: retried.report.status,
+      dispatchQueued: retried.dispatchQueued,
     },
   });
 
   return Response.json({
     ok: true,
-    report: retriedReport,
+    report: retried.report,
     queued: true,
     message: "已重新进入生成队列。",
   });

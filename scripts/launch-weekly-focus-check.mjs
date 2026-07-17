@@ -149,6 +149,15 @@ function readProjectFile(root, filename) {
 
   return readFileSync(absolutePath, "utf8");
 }
+function readAdminHealthContent(root) {
+  return [
+    readProjectFile(root, "src/app/admin/health/page.tsx"),
+    readProjectFile(root, "src/app/admin/health/full/page.tsx"),
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 
 function createResult(input) {
   return {
@@ -215,7 +224,7 @@ function checkStaticWiring(result, root) {
   const commitments = readProjectFile(root, "src/lib/launch-weekly-commitments.ts");
   const route = readProjectFile(root, "src/app/api/admin/launch/weekly-focus/route.ts");
   const form = readProjectFile(root, "src/app/admin/launch-weekly-focus-form.tsx");
-  const healthPage = readProjectFile(root, "src/app/admin/health/page.tsx");
+  const healthPage = readAdminHealthContent(root);
   const packageJson = readProjectFile(root, "package.json");
   const docs = [
     "README.md",

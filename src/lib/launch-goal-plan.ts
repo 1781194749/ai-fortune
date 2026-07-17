@@ -216,7 +216,7 @@ function buildStartMilestone(input: {
     businessGoal: "能明确回答什么时候可以收费上线、当前卡在哪、今天谁去推进。",
     productScope: [
       "中文 Web 首发",
-      "邮箱登录优先，微信扫码登录预留",
+      "Google 邮箱登录优先，微信扫码登录预留",
       "支付宝、微信支付和七牛云按真实资质推进",
       "深度报告、会员档案和证据归档保留上线闸门",
     ],

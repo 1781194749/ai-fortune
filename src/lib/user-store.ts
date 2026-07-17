@@ -7,7 +7,11 @@ import {
   compareMembershipTiers,
   ensureMembershipStateCurrent,
 } from "@/lib/membership-lifecycle";
-import { tryPrisma, type PrismaClientInstance } from "@/lib/prisma";
+import {
+  assertDatabaseFallbackAllowed,
+  tryPrisma,
+  type PrismaClientInstance,
+} from "@/lib/prisma";
 import { emailToUserId } from "@/lib/email-auth";
 
 export type PersistedAccountState = {
@@ -41,6 +45,14 @@ type UserStoreDb = PrismaClientInstance | Prisma.TransactionClient;
 
 if (!globalThis.xuanjiAdminUsers) {
   globalThis.xuanjiAdminUsers = adminUsers;
+}
+
+function requireUserDatabaseRead() {
+  assertDatabaseFallbackAllowed("PostgreSQL 暂时不可用，无法读取用户状态。");
+}
+
+function requireUserDatabaseWrite() {
+  assertDatabaseFallbackAllowed("PostgreSQL 暂时不可用，用户状态未保存。");
 }
 
 export function rememberAdminUser(input: {
@@ -257,6 +269,8 @@ export async function ensureEmailUserAndGetState(input: {
     return result.value;
   }
 
+  requireUserDatabaseWrite();
+
   const remembered = adminUsers.get(input.userId);
   const isNewUser = !remembered;
   const fallbackState = remembered
@@ -337,6 +351,11 @@ export async function ensureGoogleUserAndGetState(input: {
     };
   });
   const userId = result.ok ? result.value.userId : fallbackUserId;
+
+  if (!result.ok) {
+    requireUserDatabaseWrite();
+  }
+
   const remembered = adminUsers.get(userId);
   const isNewUser = result.ok ? result.value.isNewUser : !remembered;
   const accountState = result.ok
@@ -378,6 +397,8 @@ export async function getPersistedAccountState(
     return dbResult.value;
   }
 
+  requireUserDatabaseRead();
+
   const remembered = adminUsers.get(userId);
 
   if (!remembered) {
@@ -414,6 +435,8 @@ export async function getUserMembershipSnapshot(userId: string) {
     return dbResult.value;
   }
 
+  requireUserDatabaseRead();
+
   const remembered = adminUsers.get(userId);
 
   if (!remembered || remembered.tier === "FREE") {
@@ -442,6 +465,8 @@ export async function getPersistedUserEmail(userId: string) {
   if (dbResult.ok) {
     return dbResult.value;
   }
+
+  requireUserDatabaseRead();
 
   return adminUsers.get(userId)?.email;
 }
@@ -479,6 +504,8 @@ export async function getAdminUser(userId: string) {
   if (dbResult.ok) {
     return dbResult.value;
   }
+
+  requireUserDatabaseRead();
 
   return adminUsers.get(userId) ?? null;
 }
@@ -518,6 +545,8 @@ export async function getAdminUsers(input: { take?: number } = {}) {
   if (dbResult.ok) {
     return dbResult.value;
   }
+
+  requireUserDatabaseRead();
 
   return Array.from(adminUsers.values())
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))

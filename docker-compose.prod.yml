@@ -1,6 +1,19 @@
 name: ai-fortune-prod
 
 services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
   ai-fortune:
     build:
       context: .
@@ -16,8 +29,12 @@ services:
       HOSTNAME: 0.0.0.0
       PORT: "3000"
       NEXT_TELEMETRY_DISABLED: "1"
+      REDIS_URL: redis://redis:6379
     ports:
       - "${AI_FORTUNE_PORT:-3000}:3000"
+    depends_on:
+      redis:
+        condition: service_healthy
     healthcheck:
       test:
         [
@@ -42,7 +59,24 @@ services:
     environment:
       NODE_ENV: production
       NEXT_TELEMETRY_DISABLED: "1"
+      REDIS_URL: redis://redis:6379
     command: ["npm", "run", "launch:preflight"]
+
+  deep-report-worker:
+    image: ai-fortune:prod
+    restart: unless-stopped
+    env_file:
+      - .env.production.local
+    environment:
+      NODE_ENV: production
+      NEXT_TELEMETRY_DISABLED: "1"
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+      ai-fortune:
+        condition: service_healthy
+    command: ["node", "dist-workers/deep-report-worker.mjs"]
 
   membership-lifecycle-worker:
     image: ai-fortune:prod
@@ -57,3 +91,6 @@ services:
       ai-fortune:
         condition: service_healthy
     command: ["node", "scripts/membership-reconcile-worker.mjs"]
+
+volumes:
+  redis_data:

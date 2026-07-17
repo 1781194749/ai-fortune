@@ -244,6 +244,15 @@ function readProjectFile(root, filename) {
 
   return readFileSync(absolutePath, "utf8");
 }
+function readAdminHealthContent(root) {
+  return [
+    readProjectFile(root, "src/app/admin/health/page.tsx"),
+    readProjectFile(root, "src/app/admin/health/full/page.tsx"),
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 
 function countOccurrences(content, pattern) {
   return content.split(pattern).length - 1;
@@ -382,7 +391,7 @@ function checkSourceFillIns(result, root) {
 function checkHandoffFillIns(result, root) {
   const filename = "src/lib/launch-handoff.ts";
   const content = readProjectFile(root, filename);
-  const healthContent = readProjectFile(root, "src/app/admin/health/page.tsx") ?? "";
+  const healthContent = readAdminHealthContent(root) ?? "";
 
   if (!content) {
     return;
@@ -517,8 +526,7 @@ function checkDailyBriefProductionGate(result, root) {
     briefContent.includes("transitionGate: {") &&
     briefContent.includes("transitionCanAdvance") &&
     briefContent.includes("阶段推进门槛：canAdvance=");
-  const healthFilename = "src/app/admin/health/page.tsx";
-  const healthContent = readProjectFile(root, healthFilename) ?? "";
+  const healthContent = readAdminHealthContent(root) ?? "";
   const healthReady =
     healthContent.includes("productionGate: launchProductionGate") &&
     healthContent.includes("launchDailyBrief.productionGate") &&
@@ -584,7 +592,7 @@ function checkDecisionTransitionGate(result, root) {
   const decisionContent = readProjectFile(root, "src/lib/launch-decision.ts") ?? "";
   const decisionRouteContent =
     readProjectFile(root, "src/app/api/admin/launch/decision/route.ts") ?? "";
-  const healthContent = readProjectFile(root, "src/app/admin/health/page.tsx") ?? "";
+  const healthContent = readAdminHealthContent(root) ?? "";
 
   const sourceReady =
     decisionContent.includes("LaunchGoalTransitionGateSnapshot") &&
@@ -645,7 +653,7 @@ function checkEvidenceTransitionGate(result, root) {
   const evidenceRouteContent =
     readProjectFile(root, "src/app/api/admin/launch/evidence/route.ts") ?? "";
   const packageContent = readProjectFile(root, "src/lib/launch-package.ts") ?? "";
-  const healthContent = readProjectFile(root, "src/app/admin/health/page.tsx") ?? "";
+  const healthContent = readAdminHealthContent(root) ?? "";
 
   const sourceReady =
     evidenceContent.includes("goalTransitionGate: EvidenceGoalTransitionGate") &&
@@ -719,7 +727,7 @@ function checkOfflineActionIntegration(result, root) {
   const briefContent = readProjectFile(root, "src/lib/launch-daily-brief.ts") ?? "";
   const evidenceContent = readProjectFile(root, "src/lib/launch-evidence.ts") ?? "";
   const packageContent = readProjectFile(root, "src/lib/launch-package.ts") ?? "";
-  const healthContent = readProjectFile(root, "src/app/admin/health/page.tsx") ?? "";
+  const healthContent = readAdminHealthContent(root) ?? "";
 
   const briefReady =
     briefContent.includes("getLaunchOfflineActionPack") &&
@@ -792,8 +800,7 @@ function checkOfflineActionIntegration(result, root) {
 }
 
 function checkHealthPageAnchors(result, root) {
-  const filename = "src/app/admin/health/page.tsx";
-  const content = readProjectFile(root, filename);
+  const content = readAdminHealthContent(root);
 
   if (!content) {
     return;
@@ -976,7 +983,7 @@ function runStaticChecks(result, root) {
 function checkGoalTransitionGate(result, root) {
   const goalPlanContent = readProjectFile(root, "src/lib/launch-goal-plan.ts") ?? "";
   const followupContent = readProjectFile(root, "src/lib/launch-goal-followup.ts") ?? "";
-  const healthContent = readProjectFile(root, "src/app/admin/health/page.tsx") ?? "";
+  const healthContent = readAdminHealthContent(root) ?? "";
   const goalPlanReady =
     goalPlanContent.includes("LaunchGoalPlanTransitionGate") &&
     goalPlanContent.includes("buildTransitionGate") &&

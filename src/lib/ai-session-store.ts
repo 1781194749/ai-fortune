@@ -1,12 +1,13 @@
 import "server-only";
 
 import { randomUUID } from "crypto";
-import { MessageRole, SessionMode } from "@/generated/prisma/enums";
-import { tryPrisma } from "@/lib/prisma";
+import { AiTurnStatus, MessageRole, SessionMode } from "@/generated/prisma/enums";
+import { assertDatabaseFallbackAllowed, tryPrisma } from "@/lib/prisma";
 import { ensureDbUser } from "@/lib/user-store";
 
 type ChatTurnInput = {
   userId: string;
+  sessionId?: string;
   question: string;
   answer: string;
   toolResults?: unknown;
@@ -29,6 +30,22 @@ export type RecentChatSession = {
   updatedAt: string;
 };
 
+export type ChatConversationMessage = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  toolResult?: unknown;
+  createdAt: string;
+};
+
+export type ChatSessionDetail = {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  messages: ChatConversationMessage[];
+};
+
 type MemoryMessage = {
   id: string;
   role: "USER" | "ASSISTANT";
@@ -47,6 +64,7 @@ type MemorySession = {
 };
 
 type SessionMessageLike = {
+  id?: string;
   role: string;
   content: string;
   toolResult?: unknown;
@@ -68,9 +86,18 @@ declare global {
 }
 
 const sessions = globalThis.xuanjiAiSessions ?? [];
+const visibleTurnStatuses = [AiTurnStatus.COMPLETED, AiTurnStatus.PARTIAL];
 
 if (!globalThis.xuanjiAiSessions) {
   globalThis.xuanjiAiSessions = sessions;
+}
+
+function requireChatSessionDatabaseRead() {
+  assertDatabaseFallbackAllowed("PostgreSQL 暂时不可用，无法读取对话记录。");
+}
+
+function requireChatSessionDatabaseWrite() {
+  assertDatabaseFallbackAllowed("PostgreSQL 暂时不可用，对话记录未保存。");
 }
 
 function titleFromQuestion(question: string) {
@@ -109,6 +136,44 @@ function readToolNames(toolResult: unknown) {
     .filter(Boolean);
 }
 
+function normalizeConversationMessage(
+  message: SessionMessageLike,
+  index: number,
+): ChatConversationMessage | null {
+  const role = message.role === MessageRole.USER
+    ? "user"
+    : message.role === MessageRole.ASSISTANT
+      ? "assistant"
+      : null;
+
+  if (!role) {
+    return null;
+  }
+
+  return {
+    id: message.id ?? `message_${index}`,
+    role,
+    content: message.content,
+    toolResult: message.toolResult,
+    createdAt: toIsoString(message.createdAt),
+  };
+}
+
+function normalizeChatSessionDetail(session: SessionLike): ChatSessionDetail {
+  const messages = [...session.messages]
+    .sort((a, b) => toIsoString(a.createdAt).localeCompare(toIsoString(b.createdAt)))
+    .map(normalizeConversationMessage)
+    .filter((message): message is ChatConversationMessage => Boolean(message));
+
+  return {
+    id: session.id,
+    title: session.title,
+    createdAt: toIsoString(session.createdAt),
+    updatedAt: toIsoString(session.updatedAt),
+    messages,
+  };
+}
+
 function normalizeRecentChatSession(session: SessionLike): RecentChatSession {
   const sortedMessages = [...session.messages].sort((a, b) =>
     toIsoString(a.createdAt).localeCompare(toIsoString(b.createdAt)),
@@ -140,25 +205,52 @@ export async function saveChatTurn(input: ChatTurnInput) {
   const dbResult = await tryPrisma(async (prisma) => {
     await ensureDbUser(prisma, { userId: input.userId });
 
+    const messages = [
+      {
+        role: MessageRole.USER,
+        content: input.question,
+      },
+      {
+        role: MessageRole.ASSISTANT,
+        content: input.answer,
+        toolResult: toJsonValue(input.toolResults),
+        tokensIn: input.tokensIn,
+        tokensOut: input.tokensOut,
+      },
+    ];
+
+    if (input.sessionId) {
+      const existing = await prisma.aiSession.findFirst({
+        where: {
+          id: input.sessionId,
+          userId: input.userId,
+          mode: SessionMode.CHAT,
+        },
+        select: { id: true },
+      });
+
+      if (!existing) {
+        return null;
+      }
+
+      const session = await prisma.aiSession.update({
+        where: { id: existing.id },
+        data: {
+          messages: { create: messages },
+        },
+        select: { id: true },
+      });
+
+      return session.id;
+    }
+
     const session = await prisma.aiSession.create({
       data: {
         userId: input.userId,
         mode: SessionMode.CHAT,
         title: titleFromQuestion(input.question),
         messages: {
-          create: [
-            {
-              role: MessageRole.USER,
-              content: input.question,
-            },
-            {
-              role: MessageRole.ASSISTANT,
-              content: input.answer,
-              toolResult: toJsonValue(input.toolResults),
-              tokensIn: input.tokensIn,
-              tokensOut: input.tokensOut,
-            },
-          ],
+          create: messages,
         },
       },
     });
@@ -167,10 +259,45 @@ export async function saveChatTurn(input: ChatTurnInput) {
   });
 
   if (dbResult.ok) {
+    if (!dbResult.value) {
+      throw new Error("Chat session not found.");
+    }
+
     return dbResult.value;
   }
 
+  requireChatSessionDatabaseWrite();
+
   const createdAt = new Date().toISOString();
+
+  if (input.sessionId) {
+    const existing = sessions.find(
+      (session) => session.id === input.sessionId && session.userId === input.userId,
+    );
+
+    if (!existing) {
+      throw new Error("Chat session not found.");
+    }
+
+    existing.messages.push(
+      {
+        id: `msg_${randomUUID()}`,
+        role: "USER",
+        content: input.question,
+        createdAt,
+      },
+      {
+        id: `msg_${randomUUID()}`,
+        role: "ASSISTANT",
+        content: input.answer,
+        toolResult: input.toolResults,
+        createdAt,
+      },
+    );
+    existing.updatedAt = createdAt;
+    return existing.id;
+  }
+
   const session: MemorySession = {
     id: `chat_${randomUUID()}`,
     userId: input.userId,
@@ -198,6 +325,49 @@ export async function saveChatTurn(input: ChatTurnInput) {
   return session.id;
 }
 
+export async function getChatSessionDetail(input: {
+  userId: string;
+  sessionId: string;
+}) {
+  const dbResult = await tryPrisma(async (prisma) => {
+    const session = await prisma.aiSession.findFirst({
+      where: {
+        id: input.sessionId,
+        userId: input.userId,
+        mode: SessionMode.CHAT,
+      },
+      include: {
+        messages: {
+          where: {
+            OR: [
+              { turnId: null },
+              { turn: { status: { in: visibleTurnStatuses } } },
+            ],
+          },
+          orderBy: [
+            { createdAt: "asc" },
+            { id: "asc" },
+          ],
+        },
+      },
+    });
+
+    return session ? normalizeChatSessionDetail(session) : null;
+  });
+
+  if (dbResult.ok) {
+    return dbResult.value;
+  }
+
+  requireChatSessionDatabaseRead();
+
+  const session = sessions.find(
+    (item) => item.id === input.sessionId && item.userId === input.userId,
+  );
+
+  return session ? normalizeChatSessionDetail(session) : null;
+}
+
 export async function getRecentChatSessions(userId: string, limit = 5) {
   const take = Math.max(1, Math.min(limit, 20));
   const dbResult = await tryPrisma(async (prisma) => {
@@ -205,6 +375,15 @@ export async function getRecentChatSessions(userId: string, limit = 5) {
       where: {
         userId,
         mode: SessionMode.CHAT,
+        messages: {
+          some: {
+            role: MessageRole.ASSISTANT,
+            OR: [
+              { turnId: null },
+              { turn: { status: { in: visibleTurnStatuses } } },
+            ],
+          },
+        },
       },
       orderBy: {
         updatedAt: "desc",
@@ -212,6 +391,12 @@ export async function getRecentChatSessions(userId: string, limit = 5) {
       take,
       include: {
         messages: {
+          where: {
+            OR: [
+              { turnId: null },
+              { turn: { status: { in: visibleTurnStatuses } } },
+            ],
+          },
           orderBy: {
             createdAt: "asc",
           },
@@ -225,6 +410,8 @@ export async function getRecentChatSessions(userId: string, limit = 5) {
   if (dbResult.ok) {
     return dbResult.value;
   }
+
+  requireChatSessionDatabaseRead();
 
   return sessions
     .filter((session) => session.userId === userId)
@@ -263,6 +450,12 @@ export async function updateChatSessionTitle(input: {
       data: { title },
       include: {
         messages: {
+          where: {
+            OR: [
+              { turnId: null },
+              { turn: { status: { in: visibleTurnStatuses } } },
+            ],
+          },
           orderBy: {
             createdAt: "asc",
           },
@@ -276,6 +469,8 @@ export async function updateChatSessionTitle(input: {
   if (dbResult.ok) {
     return dbResult.value;
   }
+
+  requireChatSessionDatabaseWrite();
 
   const session = sessions.find(
     (item) => item.id === input.sessionId && item.userId === input.userId,
@@ -295,20 +490,40 @@ export async function deleteChatSession(input: {
   sessionId: string;
 }) {
   const dbResult = await tryPrisma(async (prisma) => {
-    const result = await prisma.aiSession.deleteMany({
+    const existing = await prisma.aiSession.findFirst({
       where: {
         id: input.sessionId,
         userId: input.userId,
         mode: SessionMode.CHAT,
       },
+      select: { activeTurnId: true },
     });
 
-    return result.count > 0;
+    if (!existing) {
+      return false as const;
+    }
+
+    if (existing.activeTurnId) {
+      return "busy" as const;
+    }
+
+    const result = await prisma.aiSession.deleteMany({
+      where: {
+        id: input.sessionId,
+        userId: input.userId,
+        mode: SessionMode.CHAT,
+        activeTurnId: null,
+      },
+    });
+
+    return result.count > 0 ? true as const : "busy" as const;
   });
 
   if (dbResult.ok) {
     return dbResult.value;
   }
+
+  requireChatSessionDatabaseWrite();
 
   const index = sessions.findIndex(
     (item) => item.id === input.sessionId && item.userId === input.userId,

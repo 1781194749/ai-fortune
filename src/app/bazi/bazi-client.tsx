@@ -2,7 +2,11 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { BadgeCheck, Loader2, Sparkles } from "lucide-react";
+import { Loader2, Sparkles } from "lucide-react";
+import {
+  QuestionProcessPanel,
+  type QuestionProcessState,
+} from "@/app/_components/question-process-panel";
 import { BirthDatePicker, BirthTimePicker } from "@/app/member/birth-pickers";
 import {
   normalizeBirthCalendarType,
@@ -13,9 +17,24 @@ import {
 import { getStarCostLabel } from "@/lib/commerce";
 
 type BaziPillar = {
+  key: string;
   label: string;
   ganzhi: string;
+  heavenlyStem: string;
+  earthlyBranch: string;
+  stemElement: string;
+  branchElement: string;
+  yinYang: string;
   wuxing: string;
+  naYin: string;
+  diShi: string;
+  xunKong: string;
+  stemTenGod: string;
+  hiddenStems: Array<{
+    stem: string;
+    element: string;
+    tenGod: string;
+  }>;
 };
 
 type BaziChart = {
@@ -24,9 +43,61 @@ type BaziChart = {
   zodiac: string;
   bazi: string[];
   counts: Record<string, number>;
+  weightedCounts: Record<string, number>;
   strongest: string;
   weakest: string[];
   pillars: BaziPillar[];
+  dayMaster: {
+    stem: string;
+    element: string;
+    yinYang: string;
+    seasonElement: string;
+    supportScore: number;
+    drainScore: number;
+    balanceScore: number;
+    strengthLabel: string;
+    usefulElements: string[];
+    avoidElements: string[];
+    explanation: string;
+  };
+  tenGodCounts: Record<string, number>;
+  branchRelations: Array<{
+    type: string;
+    branches: string[];
+    element?: string;
+    advice: string;
+  }>;
+  luck: {
+    start: {
+      solar: string;
+      direction: string;
+    };
+    currentDaYun?: {
+      ganZhi: string;
+      startYear: number;
+      endYear: number;
+      startAge: number;
+      endAge: number;
+      tenGod: string;
+      advice: string;
+    };
+    daYun: Array<{
+      ganZhi: string;
+      startYear: number;
+      endYear: number;
+      startAge: number;
+      endAge: number;
+      phase: string;
+      tenGod: string;
+    }>;
+    annual: Array<{
+      year: number;
+      ganZhi: string;
+      tenGod: string;
+      branchSignals: string[];
+      advice: string;
+    }>;
+  };
 };
 
 type BaziReport = {
@@ -45,6 +116,14 @@ type BaziResult = {
 };
 
 const wuxingOrder = ["木", "火", "土", "金", "水"] as const;
+
+const baziProcessSteps = [
+  { label: "校验出生信息", detail: "确认历法、日期、时辰和出生地是否足够排盘。" },
+  { label: "计算四柱十神", detail: "换算四柱干支、十神、藏干、纳音与地势。" },
+  { label: "分析旺衰喜忌", detail: "结合月令、根气和五行生克判断日主强弱。" },
+  { label: "排大运流年", detail: "生成起运、当前大运和未来流年节奏。" },
+  { label: "生成命盘报告", detail: "输出结构判断、喜用方向和可追问问题。" },
+] as const;
 
 type InitialBaziProfile = {
   name: string | null;
@@ -81,6 +160,7 @@ export function BaziClient({
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState(`本次消耗 ${getStarCostLabel("bazi_brief")}。`);
   const [result, setResult] = useState<BaziResult | null>(null);
+  const [processState, setProcessState] = useState<QuestionProcessState>("idle");
   const { calendarType, birthDate } = birthSelection;
 
   async function analyze() {
@@ -91,7 +171,8 @@ export function BaziClient({
 
     setLoading(true);
     setResult(null);
-    setMessage("正在排盘并统计五行...");
+    setProcessState("running");
+    setMessage("已开始八字命盘详析，正在校验资料、排盘和生成报告。");
 
     const response = await fetch("/api/fortune/bazi", {
       method: "POST",
@@ -106,7 +187,8 @@ export function BaziClient({
 
     if (!response.ok || data.ok === false) {
       const failure = data as { ok: false; message?: string; balance?: number };
-      setMessage(failure.message ?? "八字五行简析失败。");
+      setProcessState("error");
+      setMessage(failure.message ?? "八字命盘详析没有完成，本次不会生成报告。");
       if (typeof failure.balance === "number") {
         setBalance(failure.balance);
       }
@@ -114,8 +196,9 @@ export function BaziClient({
     }
 
     setResult(data);
+    setProcessState("success");
     setBalance(data.balanceAfter);
-    setMessage(`本次消耗 ${data.cost} 星力，剩余 ${data.balanceAfter} 星力。`);
+    setMessage(`八字命盘详析已完成，本次服务消耗 ${data.cost} 星力，剩余 ${data.balanceAfter} 星力。`);
   }
 
   return (
@@ -206,33 +289,29 @@ export function BaziClient({
           ) : (
             <Sparkles size={18} aria-hidden="true" />
           )}
-          {loading ? "排盘中..." : "生成八字五行简析"}
+          {loading ? "排盘中..." : "生成八字命盘详析"}
         </button>
         <p className="mt-3 text-sm text-[#b9ad99]">{message}</p>
       </section>
 
-      <section className="rounded-lg border border-[#3a3023] bg-[#12100d] p-5">
-        <p className="text-sm font-semibold text-[#c8a15a]">排盘过程</p>
-        <div className="mt-4 grid gap-3 md:grid-cols-4">
-          {(result?.steps ?? ["校验出生信息", "计算四柱八字", "统计五行分布", "生成简析报告"]).map(
-            (step, index) => (
-              <div
-                key={step}
-                className="rounded-md border border-[#2f261a] bg-[#080705] p-3"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="flex size-7 items-center justify-center rounded-md bg-[#c8a15a]/12 text-sm text-[#f0d49a]">
-                    {index + 1}
-                  </span>
-                  {result ? (
-                    <BadgeCheck className="text-[#3c8b72]" size={17} aria-hidden="true" />
-                  ) : null}
-                </div>
-                <p className="mt-3 text-sm text-[#d8cab2]">{step}</p>
-              </div>
-            ),
-          )}
-        </div>
+      <div>
+        <QuestionProcessPanel
+          title="排盘过程"
+          service={{
+            type: "八字命盘详析",
+            method: "四柱十神 + 旺衰喜忌 + 大运流年",
+            cost: getStarCostLabel("bazi_brief"),
+            output: "命盘结构 + 阶段建议",
+          }}
+          steps={baziProcessSteps}
+          state={processState}
+          completedSteps={result?.steps}
+          resultTitle={result?.report.title}
+          resultSummary={result?.report.summary}
+          nextActions={["补充档案继续追问", "查看完整报告", "围绕事业或关系深挖"]}
+          errorMessage={processState === "error" ? message : undefined}
+          onRetry={loading ? undefined : () => void analyze()}
+        />
 
         {result ? (
           <div className="mt-6 space-y-5">
@@ -246,26 +325,110 @@ export function BaziClient({
                   <h3 className="mt-3 font-ritual text-3xl text-[#fff7e8]">
                     {pillar.ganzhi}
                   </h3>
-                  <p className="mt-2 text-sm text-[#f0d49a]">{pillar.wuxing}</p>
+                  <p className="mt-2 text-sm text-[#f0d49a]">
+                    {pillar.stemTenGod} · {pillar.wuxing}
+                  </p>
+                  <p className="mt-3 text-xs leading-6 text-[#b9ad99]">
+                    藏干：{pillar.hiddenStems.map((item) => `${item.stem}${item.tenGod}`).join("、") || "无"}
+                  </p>
+                  <p className="mt-2 text-xs leading-6 text-[#80776a]">
+                    纳音：{pillar.naYin} / 地势：{pillar.diShi} / 空亡：{pillar.xunKong}
+                  </p>
                 </article>
               ))}
             </div>
 
-            <div className="rounded-lg border border-[#3a3023] bg-[#080705] p-5">
-              <h2 className="font-ritual text-3xl text-[#fff7e8]">五行分布</h2>
-              <div className="mt-4 grid gap-3 sm:grid-cols-5">
-                {wuxingOrder.map((element) => (
-                  <div key={element} className="rounded-md bg-[#12100d] p-3">
-                    <p className="text-sm text-[#b9ad99]">{element}</p>
-                    <p className="mt-1 text-2xl font-semibold text-[#f0d49a]">
-                      {result.chart.counts[element]}
-                    </p>
+            <div className="grid gap-5 xl:grid-cols-[0.8fr_1.2fr]">
+              <div className="rounded-lg border border-[#3a3023] bg-[#080705] p-5">
+                <h2 className="font-ritual text-3xl text-[#fff7e8]">日主旺衰</h2>
+                <p className="mt-3 text-sm leading-7 text-[#d8cab2]">
+                  {result.chart.dayMaster.stem}{result.chart.dayMaster.element}日主 · {result.chart.dayMaster.yinYang} · {result.chart.dayMaster.strengthLabel}
+                </p>
+                <p className="mt-3 text-sm leading-7 text-[#b9ad99]">
+                  {result.chart.dayMaster.explanation}
+                </p>
+                <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                  <div className="rounded-md bg-[#12100d] p-3">
+                    <p className="text-xs text-[#80776a]">扶身</p>
+                    <p className="mt-1 text-lg text-[#f0d49a]">{result.chart.dayMaster.supportScore}</p>
                   </div>
-                ))}
+                  <div className="rounded-md bg-[#12100d] p-3">
+                    <p className="text-xs text-[#80776a]">耗克</p>
+                    <p className="mt-1 text-lg text-[#f0d49a]">{result.chart.dayMaster.drainScore}</p>
+                  </div>
+                  <div className="rounded-md bg-[#12100d] p-3">
+                    <p className="text-xs text-[#80776a]">喜用</p>
+                    <p className="mt-1 text-lg text-[#f0d49a]">{result.chart.dayMaster.usefulElements.join("、")}</p>
+                  </div>
+                </div>
               </div>
-              <p className="mt-4 text-sm text-[#b9ad99]">
-                生肖：{result.chart.zodiac} / 公历：{result.chart.solar}
-              </p>
+
+              <div className="rounded-lg border border-[#3a3023] bg-[#080705] p-5">
+                <h2 className="font-ritual text-3xl text-[#fff7e8]">五行与十神</h2>
+                <div className="mt-4 grid gap-3 sm:grid-cols-5">
+                  {wuxingOrder.map((element) => (
+                    <div key={element} className="rounded-md bg-[#12100d] p-3">
+                      <p className="text-sm text-[#b9ad99]">{element}</p>
+                      <p className="mt-1 text-2xl font-semibold text-[#f0d49a]">
+                        {result.chart.weightedCounts[element] ?? result.chart.counts[element]}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {Object.entries(result.chart.tenGodCounts).slice(0, 8).map(([god, count]) => (
+                    <span key={god} className="rounded-md border border-[#3a3023] px-2 py-1 text-xs text-[#d8cab2]">
+                      {god} {count}
+                    </span>
+                  ))}
+                </div>
+                <p className="mt-4 text-sm text-[#b9ad99]">
+                  生肖：{result.chart.zodiac} / 公历：{result.chart.solar}
+                </p>
+              </div>
+            </div>
+
+            <div className="grid gap-5 xl:grid-cols-2">
+              <article className="rounded-lg border border-[#3a3023] bg-[#080705] p-5">
+                <h2 className="font-ritual text-3xl text-[#fff7e8]">地支关系</h2>
+                {result.chart.branchRelations.length > 0 ? (
+                  <div className="mt-4 space-y-3">
+                    {result.chart.branchRelations.map((relation) => (
+                      <div key={`${relation.type}-${relation.branches.join("")}`} className="rounded-md bg-[#12100d] p-3">
+                        <p className="text-sm text-[#f0d49a]">
+                          {relation.type} · {relation.branches.join("、")}{relation.element ? ` · ${relation.element}` : ""}
+                        </p>
+                        <p className="mt-2 text-xs leading-6 text-[#b9ad99]">{relation.advice}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-4 text-sm leading-7 text-[#b9ad99]">未见明显合冲刑害成组，判断更重视日主旺衰和大运流年。</p>
+                )}
+              </article>
+
+              <article className="rounded-lg border border-[#3a3023] bg-[#080705] p-5">
+                <h2 className="font-ritual text-3xl text-[#fff7e8]">大运流年</h2>
+                <p className="mt-3 text-sm leading-7 text-[#d8cab2]">
+                  {result.chart.luck.start.direction} · 起运约 {result.chart.luck.start.solar}
+                </p>
+                {result.chart.luck.currentDaYun ? (
+                  <p className="mt-3 rounded-md bg-[#12100d] p-3 text-sm leading-7 text-[#f0d49a]">
+                    当前大运：{result.chart.luck.currentDaYun.ganZhi}（{result.chart.luck.currentDaYun.startYear}-{result.chart.luck.currentDaYun.endYear}）· {result.chart.luck.currentDaYun.tenGod}
+                  </p>
+                ) : null}
+                <div className="mt-4 grid gap-2 sm:grid-cols-3">
+                  {result.chart.luck.annual.slice(0, 6).map((year) => (
+                    <div key={year.year} className="rounded-md border border-[#2f261a] p-3">
+                      <p className="text-sm text-[#f0d49a]">{year.year} {year.ganZhi}</p>
+                      <p className="mt-1 text-xs text-[#b9ad99]">{year.tenGod || "流年"}</p>
+                      {year.branchSignals.length > 0 ? (
+                        <p className="mt-1 text-[11px] text-[#80776a]">{year.branchSignals.join("、")}</p>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              </article>
             </div>
 
             <article className="rounded-lg border border-[#3a3023] bg-[#080705] p-5">
@@ -286,10 +449,10 @@ export function BaziClient({
           </div>
         ) : (
           <div className="mt-6 rounded-lg border border-[#2f261a] bg-[#080705] p-5 text-sm leading-7 text-[#b9ad99]">
-            八字五行结果会在这里生成，并同步保存到报告中心。
+            八字命盘结果会在这里生成，并同步保存到报告中心。
           </div>
         )}
-      </section>
+      </div>
     </div>
   );
 }

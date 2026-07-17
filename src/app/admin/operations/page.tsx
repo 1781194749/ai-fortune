@@ -498,7 +498,11 @@ export default async function AdminPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const resolvedSearchParams = await searchParams;
-  const access = await getAdminAccess();
+  const access = await getAdminAccess(resolvedSearchParams);
+
+  if (!access.enabled) {
+    notFound();
+  }
 
   if (!access.authenticated) {
     redirect(createLoginHref("/admin/operations", "/admin"));
@@ -508,7 +512,7 @@ export default async function AdminPage({
     notFound();
   }
 
-  const adminToken = undefined;
+  const adminToken = access.adminToken;
   const reviewDecisionFilter = normalizeChannelBudgetReviewDecision(
     readSearchValue(resolvedSearchParams, "reviewDecision"),
   );

@@ -232,6 +232,15 @@ function readProjectFile(root, filename) {
 
   return readFileSync(absolutePath, "utf8");
 }
+function readAdminHealthContent(root) {
+  return [
+    readProjectFile(root, "src/app/admin/health/page.tsx"),
+    readProjectFile(root, "src/app/admin/health/full/page.tsx"),
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 
 function summarize(result) {
   result.summary = {
@@ -640,7 +649,7 @@ function validateCallbackBusinessGuards(result) {
 function validatePaymentPlanCallbackGuard(result) {
   const root = process.cwd();
   const paymentPlan = readProjectFile(root, "src/lib/launch-payment-plan.ts");
-  const healthPage = readProjectFile(root, "src/app/admin/health/page.tsx");
+  const healthPage = readAdminHealthContent(root);
   const apiRoute = readProjectFile(root, "src/app/api/admin/launch/payment-plan/route.ts");
   const ready =
     paymentPlan.includes('"callback_guard"') &&

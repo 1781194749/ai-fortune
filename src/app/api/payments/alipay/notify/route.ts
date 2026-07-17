@@ -4,6 +4,7 @@ import {
   verifyAlipayNotify,
 } from "@/lib/payment-adapters";
 import { recordCheckoutExperimentPaid } from "@/lib/checkout-experiment";
+import { settleOptionalSideEffects } from "@/lib/optional-side-effects";
 import { recordPromotionEvent } from "@/lib/promo-code";
 
 function text(value: string, status = 200) {
@@ -69,22 +70,24 @@ export async function POST(request: Request) {
           }
         : undefined;
 
-    await recordPromotionEvent({
-      event: "paid",
-      userId: result.order.userId,
-      orderId: result.order.id,
-      productCode: result.order.productCode,
-      provider: result.order.provider,
-      promotion,
-    });
-    await recordCheckoutExperimentPaid({
-      userId: result.order.userId,
-      orderId: result.order.id,
-      productCode: result.order.productCode,
-      provider: result.order.provider,
-      amountCents: result.order.amountCents,
-      currency: result.order.currency,
-    });
+    await settleOptionalSideEffects("alipay paid telemetry", [
+      recordPromotionEvent({
+        event: "paid",
+        userId: result.order.userId,
+        orderId: result.order.id,
+        productCode: result.order.productCode,
+        provider: result.order.provider,
+        promotion,
+      }),
+      recordCheckoutExperimentPaid({
+        userId: result.order.userId,
+        orderId: result.order.id,
+        productCode: result.order.productCode,
+        provider: result.order.provider,
+        amountCents: result.order.amountCents,
+        currency: result.order.currency,
+      }),
+    ]);
   }
 
   return result.ok ? text("success") : text("fail", 404);

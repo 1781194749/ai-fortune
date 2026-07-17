@@ -18,15 +18,15 @@ export const tierMeta: Record<MembershipTierCode, { label: string; description: 
   },
   MONTHLY: {
     label: "月度会员",
-    description: "每月获得稳定星力与报告额度。",
+    description: "30 天持续问事、手相分析、报告额度与基础档案记忆。",
   },
   PRO: {
     label: "进阶会员",
-    description: "适合高频问事、深度报告与手相分析。",
+    description: "适合高频追问、长期记忆、深度报告与多次手相分析。",
   },
   YEARLY: {
-    label: "深度陪伴会员",
-    description: "围绕一个核心主题连续跟进 30 天，并获得周复盘与阶段总结。",
+    label: "年度会员",
+    description: "全年档案沉淀、年度运势、主题报告与长期陪伴。",
   },
 };
 
@@ -76,8 +76,8 @@ export function formatPercent(value: number) {
 }
 
 export function getReportTypeLabel(type: string) {
-  if (type === "BAZI_WUXING") return "八字";
-  if (type === "BAGUA") return "八卦";
+  if (type === "BAZI_WUXING") return "八字命盘";
+  if (type === "BAGUA") return "六十四卦";
   if (type === "PALM") return "手相";
   if (type === "COMPOSITE") return "综合";
   if (type === "YEARLY") return "年度";

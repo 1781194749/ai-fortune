@@ -157,6 +157,15 @@ function readProjectFile(root, filename) {
 
   return readFileSync(absolutePath, "utf8");
 }
+function readAdminHealthContent(root) {
+  return [
+    readProjectFile(root, "src/app/admin/health/page.tsx"),
+    readProjectFile(root, "src/app/admin/health/full/page.tsx"),
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 
 function checkFileExists(result, root, filename) {
   const exists = existsSync(path.resolve(root, filename));
@@ -237,7 +246,7 @@ function runStaticChecks(result, root) {
     id: "admin-health-production-gate",
     group: "后台门禁",
     label: "/admin/health 总门禁可见",
-    content: readProjectFile(root, "src/app/admin/health/page.tsx"),
+    content: readAdminHealthContent(root),
     tokens: [
       "getLaunchProductionGate",
       "launchProductionGate",
@@ -311,7 +320,7 @@ function runStaticChecks(result, root) {
     id: "admin-archive-production-gate",
     group: "后台门禁",
     label: "归档卡片展示总门禁",
-    content: readProjectFile(root, "src/app/admin/health/page.tsx"),
+    content: readAdminHealthContent(root),
     tokens: [
       "archive.metadata.productionGate",
       "生产总门禁",
@@ -346,7 +355,7 @@ function runStaticChecks(result, root) {
     id: "admin-health-blocker-production-gate",
     group: "后台门禁",
     label: "阻断总控台生产门禁卡片",
-    content: readProjectFile(root, "src/app/admin/health/page.tsx"),
+    content: readAdminHealthContent(root),
     tokens: [
       "productionGate: launchProductionGate",
       "launchBlockerDashboard.productionGate",
@@ -383,7 +392,7 @@ function runStaticChecks(result, root) {
     id: "admin-health-decision-production-gate",
     group: "最终决策",
     label: "后台最终决策展示总门禁",
-    content: readProjectFile(root, "src/app/admin/health/page.tsx"),
+    content: readAdminHealthContent(root),
     tokens: [
       "productionGate: launchProductionGate",
       "launchDecision.productionGate",

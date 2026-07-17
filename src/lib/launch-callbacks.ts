@@ -232,9 +232,9 @@ export function getLaunchCallbackChecklist(env: Env = process.env) {
       platform: "微信开放平台",
       configName: "授权回调域",
       value: domain,
-      detail: "第一版邮箱登录已可用，微信扫码登录为预留能力；当前仓库尚未实现微信 OAuth 回调 route。",
+      detail: "第一版以 Google 邮箱登录承接，微信扫码登录为预留能力；当前仓库尚未实现微信 OAuth 回调 route。",
       action: "微信开放平台通过后再实现扫码登录回调，并开启 AUTH_WECHAT_ENABLED=true。",
-      evidence: "微信扫码登录能创建或恢复同一用户，邮箱登录仍可作为备选。",
+      evidence: "微信扫码登录能创建或恢复同一用户，Google 登录仍可作为主入口。",
       status: itemStatus({
         baseStatus,
         requiredForLaunch: false,

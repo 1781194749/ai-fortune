@@ -21,7 +21,7 @@ function enabled(value: string | undefined, fallback = false) {
 
 export function getRuntimeFeatures(env: Env = process.env): RuntimeFeatures {
   return {
-    authEmail: enabled(env.AUTH_EMAIL_ENABLED, true),
+    authEmail: enabled(env.AUTH_EMAIL_ENABLED),
     authGoogle: enabled(env.AUTH_GOOGLE_ENABLED),
     authWechat: enabled(env.AUTH_WECHAT_ENABLED),
     paymentProvider: env.PAYMENT_PROVIDER === "live" ? "live" : "mock",

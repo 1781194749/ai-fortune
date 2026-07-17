@@ -72,7 +72,11 @@ export default async function AdminPage({
   const activeSection = normalizeAdminSection(readSearchValue(resolvedSearchParams, "section"));
   const query = readSearchValue(resolvedSearchParams, "q");
   const status = readSearchValue(resolvedSearchParams, "status");
-  const access = await getAdminAccess();
+  const access = await getAdminAccess(resolvedSearchParams);
+
+  if (!access.enabled) {
+    notFound();
+  }
 
   if (!access.authenticated) {
     redirect(
@@ -87,7 +91,7 @@ export default async function AdminPage({
     notFound();
   }
 
-  const adminToken = undefined;
+  const adminToken = access.adminToken;
   const [data, productRows] = await Promise.all([
     getAdminDashboardData(),
     getAdminProductConfigRows(),

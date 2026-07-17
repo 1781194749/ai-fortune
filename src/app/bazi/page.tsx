@@ -18,10 +18,11 @@ export default async function BaziPage() {
   return (
     <ToolPageShell
       eyebrow="BAZI & FIVE ELEMENTS"
-      title="读取你的出生节奏与五行倾向"
-      description="选择出生历法与时辰，玄机会完成四柱排盘、五行分布和强弱简析，帮你看见更适合自己的行动节奏。"
+      title="读取你的四柱结构、喜忌与阶段节奏"
+      description="选择出生历法与时辰，玄机会完成四柱十神、藏干纳音、旺衰喜忌、大运和未来流年分析，帮你看见更适合自己的行动节奏。"
       icon={Hexagon}
       accent="peacock"
+      chatMethod="bazi"
     >
       <BaziClient
         initialBalance={session.starBalance}

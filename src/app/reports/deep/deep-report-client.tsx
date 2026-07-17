@@ -151,6 +151,7 @@ export function DeepReportClient({
   const [loadingProduct, setLoadingProduct] = useState<string | null>(null);
   const [loadingQuotaProduct, setLoadingQuotaProduct] = useState<string | null>(null);
   const [generatingOrder, setGeneratingOrder] = useState<string | null>(null);
+  const [retryingReportId, setRetryingReportId] = useState<string | null>(null);
   const [promotionCodes, setPromotionCodes] = useState<Record<string, string>>({});
   const [promotionMessages, setPromotionMessages] = useState<Record<string, string>>({});
   const [promotionQuotes, setPromotionQuotes] = useState<
@@ -362,6 +363,47 @@ export function DeepReportClient({
     setMessage("已使用 1 份会员报告额度，深度报告已进入生成队列。");
   }
 
+  async function retryReport(reportId: string) {
+    setRetryingReportId(reportId);
+    setMessage("正在重新派发深度报告生成任务...");
+
+    const response = await fetch(`/api/reports/${reportId}/retry`, {
+      method: "POST",
+    });
+    const data = (await response.json()) as ApiResult & { message?: string };
+
+    setRetryingReportId(null);
+
+    if (!response.ok || data.ok === false) {
+      setMessage(data.ok === false ? data.message ?? "报告重试失败。" : "报告重试失败。");
+
+      if (data.entitlement) {
+        setReportQuota(data.entitlement);
+      }
+
+      return;
+    }
+
+    if (!data.report) {
+      setMessage("报告重试失败。");
+      return;
+    }
+
+    const nextReport = data.report;
+
+    setReports((current) =>
+      current.some((report) => report.id === nextReport.id)
+        ? current.map((report) => (report.id === nextReport.id ? nextReport : report))
+        : [nextReport, ...current],
+    );
+
+    if (data.entitlement) {
+      setReportQuota(data.entitlement);
+    }
+
+    setMessage(data.message ?? "深度报告已重新进入生成队列。");
+  }
+
   async function generateReport(orderId: string) {
     setGeneratingOrder(orderId);
     setMessage("正在创建深度报告生成任务...");
@@ -431,6 +473,14 @@ export function DeepReportClient({
               {reportQuota.remaining > 0 ? "可直接使用" : "购买后可增加"}
             </span>
           </div>
+          {reportQuota.remaining <= 0 ? (
+            <Link
+              href="/pricing#plans"
+              className="mt-3 inline-flex h-9 items-center justify-center rounded-md bg-[#c8a15a] px-3 text-sm font-semibold text-[#130f09] transition hover:bg-[#f0d49a]"
+            >
+              查看会员套餐
+            </Link>
+          ) : null}
         </div>
 
         <div className="mt-5 grid gap-4">
@@ -565,6 +615,22 @@ export function DeepReportClient({
                   >
                     查看报告
                   </Link>
+                ) : report.status === "FAILED" ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void retryReport(report.id);
+                    }}
+                    disabled={retryingReportId !== null || loadingProduct !== null || loadingQuotaProduct !== null}
+                    className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-[#c8a15a] px-3 text-sm font-semibold text-[#130f09] transition hover:bg-[#f0d49a] disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {retryingReportId === report.id ? (
+                      <Loader2 className="animate-spin" size={16} />
+                    ) : (
+                      <ScrollText size={16} />
+                    )}
+                    {retryingReportId === report.id ? "重试中..." : "重新生成"}
+                  </button>
                 ) : (
                   <span className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-[#6a5431] px-3 text-sm text-[#d8cab2]">
                     <Clock3
@@ -662,7 +728,7 @@ export function DeepReportClient({
                           <button
                             type="button"
                             onClick={() => generateReport(order.id)}
-                            disabled={generatingOrder !== null}
+                            disabled={generatingOrder !== null || retryingReportId !== null}
                             className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-[#c8a15a] px-3 text-sm font-semibold text-[#130f09] transition hover:bg-[#f0d49a] disabled:cursor-not-allowed disabled:opacity-60"
                           >
                             {generatingOrder === order.id ? (

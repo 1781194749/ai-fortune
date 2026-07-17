@@ -101,12 +101,12 @@ export async function getOperationalConfigStatus() {
   }
 
   const fallbackDetail = storeStatus.databaseConfigured
-    ? "已配置 DATABASE_URL，但当前数据库不可用，运营配置暂时回退到进程内存。"
+    ? "已配置 DATABASE_URL，但当前数据库不可用；生产关键业务会阻断，运营配置仅显示当前进程状态。"
     : "当前未配置 DATABASE_URL，运营配置只保存在本地进程内存。";
 
   return {
     health: "warning",
-    label: storeStatus.databaseConfigured ? "数据库回退内存" : "内存模式",
+    label: storeStatus.databaseConfigured ? "数据库不可用" : "内存模式",
     detail: fallbackDetail,
     action: "配置并验证 PostgreSQL 后，优惠码配置、首单实验策略和后台审计才具备生产级恢复能力。",
     items: [

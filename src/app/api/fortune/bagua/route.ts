@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { checkEntitlement, getResolvedStarCost } from "@/lib/entitlements";
 import { buildBaguaReading, generateBagua } from "@/lib/bagua";
 import { spendStars } from "@/lib/mock-payment-store";
@@ -37,7 +38,7 @@ export async function POST(request: Request) {
     return Response.json(
       {
         ok: false,
-        message: `星力不足，需要 ${entitlement.requiredStars} 星力，当前 ${entitlement.balance} 星力。`,
+        message: `本次八卦问事服务预计需要 ${entitlement.requiredStars} 星力追问余量，当前可用 ${entitlement.balance} 星力。`,
         requiredStars: entitlement.requiredStars,
         balance: entitlement.balance,
       },
@@ -49,8 +50,22 @@ export async function POST(request: Request) {
     userId: session.userId,
     question,
     timeframe,
-  });
+  }, randomUUID());
   const reading = buildBaguaReading(chart);
+  const cost = getResolvedStarCost("bagua_question");
+  const spendResult = await spendStars(session, {
+    featureCode: "bagua_question",
+    amount: cost,
+    reason: `${reading.title} 服务消耗 ${cost} 星力`,
+  });
+
+  if (!spendResult.ok) {
+    return Response.json(
+      { ok: false, message: "追问余量不足，无法完成本次八卦问事服务。本次不会生成报告。" },
+      { status: 402 },
+    );
+  }
+
   const report = await createMockReport({
     userId: session.userId,
     type: "BAGUA",
@@ -65,20 +80,6 @@ export async function POST(request: Request) {
     modelUsed: "local-bagua-generator",
     costTokens: 0,
   });
-  const cost = getResolvedStarCost("bagua_question");
-  const spendResult = await spendStars(session, {
-    featureCode: "bagua_question",
-    amount: cost,
-    reportId: report.id,
-    reason: `${reading.title} 消耗 ${cost} 星力`,
-  });
-
-  if (!spendResult.ok) {
-    return Response.json(
-      { ok: false, message: "星力不足，无法完成本次八卦问事。" },
-      { status: 402 },
-    );
-  }
 
   await createSession({
     userId: spendResult.nextSession.userId,
@@ -89,7 +90,7 @@ export async function POST(request: Request) {
 
   return Response.json({
     ok: true,
-    steps: ["确定问事主题", "生成六爻卦象", "识别动爻变卦", "生成问事建议"],
+    steps: ["确定问事主题", "生成六爻卦象", "定位六十四卦", "识别动爻互错综", "生成问事建议"],
     cost,
     balanceAfter: spendResult.nextSession.starBalance,
     chart,

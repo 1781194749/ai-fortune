@@ -1,7 +1,7 @@
 import "server-only";
 
 import { randomUUID } from "crypto";
-import { tryPrisma } from "@/lib/prisma";
+import { assertDatabaseFallbackAllowed, tryPrisma } from "@/lib/prisma";
 
 export type UsageLogInput = {
   userId?: string;
@@ -12,6 +12,7 @@ export type UsageLogInput = {
   tokensOut?: number;
   imageCount?: number;
   costCents?: number;
+  idempotencyKey?: string;
   metadata?: unknown;
 };
 
@@ -46,32 +47,109 @@ function toJsonValue(value: unknown) {
   return JSON.parse(JSON.stringify(value)) as never;
 }
 
+function requireUsageLogDatabaseWrite() {
+  assertDatabaseFallbackAllowed("PostgreSQL 暂时不可用，用量日志未写入。");
+}
+
+function requireUsageLogDatabaseRead() {
+  assertDatabaseFallbackAllowed("PostgreSQL 暂时不可用，无法读取用量日志。");
+}
+
+function mapDbUsageLog(
+  log: {
+    id: string;
+    userId: string | null;
+    provider: string;
+    model: string;
+    feature: string;
+    tokensIn: number | null;
+    tokensOut: number | null;
+    imageCount: number;
+    costCents: number | null;
+    idempotencyKey: string | null;
+    metadata: unknown;
+    createdAt: Date;
+  },
+  input?: UsageLogInput,
+) {
+  return {
+    userId: log.userId ?? input?.userId,
+    provider: log.provider,
+    model: log.model,
+    feature: log.feature,
+    tokensIn: log.tokensIn ?? undefined,
+    tokensOut: log.tokensOut ?? undefined,
+    imageCount: log.imageCount,
+    costCents: log.costCents ?? undefined,
+    idempotencyKey: log.idempotencyKey ?? undefined,
+    metadata: log.metadata,
+    id: log.id,
+    createdAt: log.createdAt.toISOString(),
+  } satisfies UsageLogRecord;
+}
+
 export async function createUsageLog(input: UsageLogInput) {
   const dbResult = await tryPrisma(async (prisma) => {
-    const log = await prisma.usageLog.create({
-      data: {
-        userId: input.userId,
-        provider: input.provider,
-        model: input.model,
-        feature: input.feature,
-        tokensIn: input.tokensIn,
-        tokensOut: input.tokensOut,
-        imageCount: input.imageCount ?? 0,
-        costCents: input.costCents,
-        metadata: toJsonValue(input.metadata),
-      },
-    });
+    if (input.idempotencyKey) {
+      const existing = await prisma.usageLog.findUnique({
+        where: { idempotencyKey: input.idempotencyKey },
+      });
 
-    return {
-      ...input,
-      id: log.id,
-      imageCount: log.imageCount,
-      createdAt: log.createdAt.toISOString(),
-    } satisfies UsageLogRecord;
+      if (existing) {
+        return mapDbUsageLog(existing, input);
+      }
+    }
+
+    try {
+      const log = await prisma.usageLog.create({
+        data: {
+          userId: input.userId,
+          provider: input.provider,
+          model: input.model,
+          feature: input.feature,
+          tokensIn: input.tokensIn,
+          tokensOut: input.tokensOut,
+          imageCount: input.imageCount ?? 0,
+          costCents: input.costCents,
+          idempotencyKey: input.idempotencyKey,
+          metadata: toJsonValue(input.metadata),
+        },
+      });
+
+      return mapDbUsageLog(log, input);
+    } catch (error) {
+      if (
+        input.idempotencyKey &&
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        error.code === "P2002"
+      ) {
+        const existing = await prisma.usageLog.findUnique({
+          where: { idempotencyKey: input.idempotencyKey },
+        });
+
+        if (existing) {
+          return mapDbUsageLog(existing, input);
+        }
+      }
+
+      throw error;
+    }
   });
 
   if (dbResult.ok) {
     return dbResult.value;
+  }
+
+  requireUsageLogDatabaseWrite();
+
+  if (input.idempotencyKey) {
+    const existing = usageLogs.find((log) => log.idempotencyKey === input.idempotencyKey);
+
+    if (existing) {
+      return existing;
+    }
   }
 
   const record: UsageLogRecord = {
@@ -105,6 +183,7 @@ export async function getUserUsageLogs(userId: string) {
           tokensOut: log.tokensOut ?? undefined,
           imageCount: log.imageCount,
           costCents: log.costCents ?? undefined,
+          idempotencyKey: log.idempotencyKey ?? undefined,
           metadata: log.metadata,
           createdAt: log.createdAt.toISOString(),
         }) satisfies UsageLogRecord,
@@ -114,6 +193,8 @@ export async function getUserUsageLogs(userId: string) {
   if (dbResult.ok) {
     return dbResult.value;
   }
+
+  requireUsageLogDatabaseRead();
 
   return usageLogs
     .filter((log) => log.userId === userId)
@@ -142,6 +223,7 @@ export async function getAdminUsageLogs(input: { take?: number } = {}) {
           tokensOut: log.tokensOut ?? undefined,
           imageCount: log.imageCount,
           costCents: log.costCents ?? undefined,
+          idempotencyKey: log.idempotencyKey ?? undefined,
           metadata: log.metadata,
           createdAt: log.createdAt.toISOString(),
         }) satisfies UsageLogRecord,
@@ -151,6 +233,8 @@ export async function getAdminUsageLogs(input: { take?: number } = {}) {
   if (dbResult.ok) {
     return dbResult.value;
   }
+
+  requireUsageLogDatabaseRead();
 
   return [...usageLogs]
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
@@ -179,6 +263,7 @@ export async function getUsageLogsByFeature(feature: string, input: { take?: num
           tokensOut: log.tokensOut ?? undefined,
           imageCount: log.imageCount,
           costCents: log.costCents ?? undefined,
+          idempotencyKey: log.idempotencyKey ?? undefined,
           metadata: log.metadata,
           createdAt: log.createdAt.toISOString(),
         }) satisfies UsageLogRecord,
@@ -188,6 +273,8 @@ export async function getUsageLogsByFeature(feature: string, input: { take?: num
   if (dbResult.ok) {
     return dbResult.value;
   }
+
+  requireUsageLogDatabaseRead();
 
   return usageLogs
     .filter((log) => log.feature === feature)

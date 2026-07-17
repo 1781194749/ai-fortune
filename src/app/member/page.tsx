@@ -7,6 +7,7 @@ import {
   FileText,
   Gift,
   Hexagon,
+  History,
   MessageCircle,
   Route,
   ScrollText,
@@ -23,17 +24,24 @@ import {
   getEntitlementUsageLabel,
   getMemberEntitlementSummary,
 } from "@/lib/member-entitlements";
-import { getUserMockOrders } from "@/lib/mock-payment-store";
+import { getOrderDisplay, getUserMockOrders } from "@/lib/mock-payment-store";
 import { getUserMockReports } from "@/lib/report-store";
-import { getRequiredMemberSession, getChatIntentLabel, formatTime } from "./member-data";
+import {
+  getRequiredMemberSession,
+  getChatIntentLabel,
+  getOrderStatusLabel,
+  getReportStatusLabel,
+  getReportTypeLabel,
+  formatTime,
+} from "./member-data";
 import { EmptyState, MetricCard, PageHeader, Panel } from "./member-ui";
 
 const quickActions = [
-  { href: "/chat", label: "AI 问事", detail: "继续对话", icon: Bot },
-  { href: "/reports/deep", label: "深度报告", detail: "生成报告", icon: ScrollText },
-  { href: "/tarot", label: "塔罗", detail: "三牌阵", icon: Sparkles },
-  { href: "/bazi", label: "八字", detail: "五行排盘", icon: Hexagon },
-  { href: "/bagua", label: "八卦", detail: "起卦问事", icon: Target },
+  { href: "/chat", label: "AI 问事", detail: "先确认方式", icon: Bot },
+  { href: "/reports/deep", label: "深度报告", detail: "沉淀判断", icon: ScrollText },
+  { href: "/tarot", label: "塔罗", detail: "牌阵问事", icon: Sparkles },
+  { href: "/bazi", label: "八字", detail: "命盘详析", icon: Hexagon },
+  { href: "/bagua", label: "八卦", detail: "六十四卦", icon: Target },
   { href: "/palm", label: "手相", detail: "图片分析", icon: Camera },
 ] as const;
 
@@ -53,6 +61,8 @@ export default async function MemberOverviewPage() {
     orders: rawOrders,
     reports,
   });
+  const recentReports = reports.slice(0, 3);
+  const recentOrders = rawOrders.map(getOrderDisplay).slice(0, 3);
 
   return (
     <div className="space-y-6">
@@ -62,20 +72,25 @@ export default async function MemberOverviewPage() {
         description="这里只放账户核心状态和下一步入口。具体管理项在左侧拆分页面里处理。"
       />
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <MetricCard label="星力余额" value={session.starBalance} suffix="星力" detail="聊天与推演消耗" icon={Coins} />
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
         <MetricCard
-          label="深度报告"
+          label="陪伴状态"
+          value={companionState?.theme ? "跟进中" : canUseCompanion ? "待开启" : "未开启"}
+          detail={companionState?.theme?.title ?? (canUseCompanion ? "设置 30 天核心主题" : "¥99 方案解锁主题陪伴")}
+          icon={Route}
+        />
+        <MetricCard
+          label="深度报告额度"
           value={entitlementSummary.reportQuota.remaining}
           suffix="份"
-          detail={`用量 ${getEntitlementUsageLabel(entitlementSummary.reportQuota)}`}
+          detail={`${entitlementSummary.reportQuota.remaining} 份深度报告额度 · 用量 ${getEntitlementUsageLabel(entitlementSummary.reportQuota)}`}
           icon={FileText}
         />
         <MetricCard
           label="手相额度"
           value={entitlementSummary.palmQuota.remaining}
           suffix="次"
-          detail={`用量 ${getEntitlementUsageLabel(entitlementSummary.palmQuota)}`}
+          detail={`${entitlementSummary.palmQuota.remaining} 次手相额度 · 用量 ${getEntitlementUsageLabel(entitlementSummary.palmQuota)}`}
           icon={Camera}
         />
         <MetricCard
@@ -85,6 +100,7 @@ export default async function MemberOverviewPage() {
           detail={profile ? "命理档案状态" : "尚未建档"}
           icon={UserRound}
         />
+        <MetricCard label="追问余量" value={session.starBalance} suffix="星力" detail="按服务确认后消耗" icon={Coins} />
         <MetricCard
           label="成功邀请"
           value={inviteRewardSummary.totalAccepted}
@@ -163,6 +179,76 @@ export default async function MemberOverviewPage() {
                 <EmptyState icon={MessageCircle} title="暂无对话记录" action={{ href: "/chat", label: "开始问事" }} />
               </div>
             )}
+          </div>
+        </Panel>
+      </section>
+
+      <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        <Panel title="最近报告" description="完成、生成中和失败状态都在这里回看" icon={FileText}>
+          <div className="divide-y divide-[#20252d]">
+            {recentReports.length > 0 ? (
+              recentReports.map((report) => (
+                <Link
+                  key={report.id}
+                  href={report.status === "COMPLETED" ? `/reports/${report.id}` : "/reports/deep"}
+                  className="group flex items-center gap-4 px-5 py-4 transition hover:bg-[#151a21]"
+                >
+                  <span className="rounded-md border border-[#303642] px-2 py-1 text-xs text-[#8d98a8]">
+                    {getReportTypeLabel(report.type)}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium text-[#d7dee8]">{report.title}</span>
+                    <span className="mt-1 block truncate text-xs text-[#697386]">{report.summary || "报告内容整理中"}</span>
+                  </span>
+                  <span className="shrink-0 text-xs text-[#d8b873]">{getReportStatusLabel(report.status)}</span>
+                </Link>
+              ))
+            ) : (
+              <div className="p-5">
+                <EmptyState icon={FileText} title="暂无报告文件" action={{ href: "/reports/deep", label: "生成报告" }} />
+              </div>
+            )}
+          </div>
+          <div className="border-t border-[#20252d] px-5 py-4">
+            <Link href="/member/reports" className="inline-flex h-9 items-center gap-2 rounded-md border border-[#303642] px-3 text-sm text-[#d8b873] transition hover:border-[#c9a35f]/55 hover:bg-[#19160f]">
+              查看全部报告
+              <ArrowRight size={15} aria-hidden="true" />
+            </Link>
+          </div>
+        </Panel>
+
+        <Panel title="最近交易" description="订单、星力流水和权益用量分开管理" icon={History}>
+          <div className="divide-y divide-[#20252d]">
+            {recentOrders.length > 0 ? (
+              recentOrders.map((order) => (
+                <Link
+                  key={order.id}
+                  href="/member/records"
+                  className="group flex items-center gap-4 px-5 py-4 transition hover:bg-[#151a21]"
+                >
+                  <span className="rounded-md border border-[#303642] px-2 py-1 text-xs text-[#8d98a8]">
+                    {getOrderStatusLabel(order.status)}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium text-[#d7dee8]">{order.productName}</span>
+                    <span className="mt-1 block truncate text-xs text-[#697386]">{formatTime(order.createdAt)}</span>
+                  </span>
+                  <span className="shrink-0 text-xs text-[#d8b873]">{order.priceLabel}</span>
+                </Link>
+              ))
+            ) : (
+              <div className="p-5">
+                <EmptyState icon={History} title="暂无交易记录" action={{ href: "/pricing", label: "查看会员" }} />
+              </div>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-2 border-t border-[#20252d] px-5 py-4">
+            <Link href="/member/records" className="inline-flex h-9 items-center gap-2 rounded-md border border-[#303642] px-3 text-sm text-[#d8b873] transition hover:border-[#c9a35f]/55 hover:bg-[#19160f]">
+              交易记录
+            </Link>
+            <Link href="/member/entitlements" className="inline-flex h-9 items-center gap-2 rounded-md border border-[#303642] px-3 text-sm text-[#d8b873] transition hover:border-[#c9a35f]/55 hover:bg-[#19160f]">
+              权益额度
+            </Link>
           </div>
         </Panel>
       </section>

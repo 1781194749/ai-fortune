@@ -1,8 +1,15 @@
+import { randomUUID } from "node:crypto";
 import { checkEntitlement, getResolvedStarCost } from "@/lib/entitlements";
 import { claimDailyExperience } from "@/lib/daily-experience-store";
 import { spendStars } from "@/lib/mock-payment-store";
 import { createMockReport } from "@/lib/report-store";
-import { buildTarotReading, drawTarot, type TarotSpread } from "@/lib/tarot";
+import {
+  buildTarotReading,
+  drawTarot,
+  getTarotDeckAudit,
+  isTarotSpread,
+  type TarotSpread,
+} from "@/lib/tarot";
 import { createSession, getSession } from "@/lib/session";
 import type { FeatureCode } from "@/lib/commerce";
 
@@ -10,11 +17,10 @@ const spreadToFeature: Record<TarotSpread, FeatureCode> = {
   daily: "tarot_daily",
   three_card: "tarot_three_card",
   love: "tarot_love",
+  decision: "tarot_three_card",
+  career: "tarot_three_card",
+  celtic_cross: "tarot_love",
 };
-
-function isTarotSpread(value: string): value is TarotSpread {
-  return value === "daily" || value === "three_card" || value === "love";
-}
 
 export async function POST(request: Request) {
   const session = await getSession();
@@ -43,7 +49,7 @@ export async function POST(request: Request) {
     return Response.json(
       {
         ok: false,
-        message: `星力不足，需要 ${entitlement.requiredStars} 星力，当前 ${entitlement.balance} 星力。`,
+        message: `本次塔罗服务预计需要 ${entitlement.requiredStars} 星力追问余量，当前可用 ${entitlement.balance} 星力。`,
         requiredStars: entitlement.requiredStars,
         balance: entitlement.balance,
       },
@@ -68,8 +74,22 @@ export async function POST(request: Request) {
     );
   }
 
-  const cards = drawTarot(spread, question, session.userId);
+  const cards = drawTarot(spread, question, session.userId, randomUUID());
   const reading = buildTarotReading({ spread, question, cards });
+  const cost = getResolvedStarCost(featureCode);
+  const spendResult = await spendStars(session, {
+    featureCode,
+    amount: cost,
+    reason: `${reading.title} 服务消耗 ${cost} 星力`,
+  });
+
+  if (!spendResult.ok) {
+    return Response.json(
+      { ok: false, message: "追问余量不足，无法完成本次塔罗服务。本次不会生成报告。" },
+      { status: 402 },
+    );
+  }
+
   const report = await createMockReport({
     userId: session.userId,
     type: "TAROT",
@@ -80,27 +100,15 @@ export async function POST(request: Request) {
       spread,
       question,
       featureCode,
+      deckAudit: getTarotDeckAudit(),
     },
     toolResults: {
       cards,
+      reading,
     },
     modelUsed: "local-tarot-spread",
     costTokens: 0,
   });
-  const cost = getResolvedStarCost(featureCode);
-  const spendResult = await spendStars(session, {
-    featureCode,
-    amount: cost,
-    reportId: report.id,
-    reason: `${reading.title} 消耗 ${cost} 星力`,
-  });
-
-  if (!spendResult.ok) {
-    return Response.json(
-      { ok: false, message: "星力不足，无法完成本次解读。" },
-      { status: 402 },
-    );
-  }
 
   await createSession({
     userId: spendResult.nextSession.userId,
