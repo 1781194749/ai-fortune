@@ -54,6 +54,7 @@ if [ ! -f ".env.production.local" ]; then
 fi
 
 compose --profile tools build ai-fortune ai-fortune-tools
+compose up -d postgres redis
 
 if [ "${RUN_PRISMA_PUSH}" != "false" ]; then
   compose --profile tools run --rm ai-fortune-tools npm run prisma:push
