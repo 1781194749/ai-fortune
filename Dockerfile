@@ -4,7 +4,11 @@ WORKDIR /app
 
 ENV NEXT_TELEMETRY_DISABLED=1
 
-RUN apt-get update \
+RUN sed -i \
+    -e 's|http://deb.debian.org/debian-security|http://mirrors.cloud.tencent.com/debian-security|g' \
+    -e 's|http://deb.debian.org/debian|http://mirrors.cloud.tencent.com/debian|g' \
+    /etc/apt/sources.list.d/debian.sources \
+  && apt-get -o Acquire::http::Timeout=30 -o Acquire::Retries=3 update \
   && apt-get install -y --no-install-recommends openssl \
   && rm -rf /var/lib/apt/lists/*
 
