@@ -1,9 +1,23 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" rx="16" fill="#0d0e0c"/>
-  <circle cx="32" cy="32" r="26" fill="#17150f" stroke="#c9a35f" stroke-opacity="0.68" stroke-width="2"/>
-  <circle cx="32" cy="32" r="18" fill="none" stroke="#c9a35f" stroke-opacity="0.34" stroke-width="1.5"/>
-  <path d="M32 9v14M32 41v14M9 32h14M41 32h14" stroke="#efd9a6" stroke-width="2" stroke-linecap="round"/>
-  <path d="m15.7 15.7 10 10M38.3 38.3l10 10M48.3 15.7l-10 10M25.7 38.3l-10 10" stroke="#c9a35f" stroke-opacity="0.72" stroke-width="1.5" stroke-linecap="round"/>
-  <path d="m32 23 2.8 6.2L41 32l-6.2 2.8L32 41l-2.8-6.2L23 32l6.2-2.8L32 23Z" fill="#efd9a6"/>
-  <circle cx="32" cy="32" r="2.5" fill="#0d0e0c"/>
+  <defs>
+    <linearGradient id="frame" x1="10" y1="8" x2="54" y2="58" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#f2d58e"/>
+      <stop offset="0.48" stop-color="#c99b4f"/>
+      <stop offset="1" stop-color="#866832"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientTransform="matrix(0 31 -31 0 32 29)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6f5527"/>
+      <stop offset="0.58" stop-color="#17130b"/>
+      <stop offset="1" stop-color="#090a08"/>
+    </radialGradient>
+  </defs>
+  <rect width="64" height="64" rx="16" fill="#080907"/>
+  <rect x="4" y="4" width="56" height="56" rx="14" fill="url(#glow)" stroke="url(#frame)" stroke-width="1.6"/>
+  <circle cx="32" cy="28.5" r="21" fill="none" stroke="#d6ad62" stroke-opacity="0.5" stroke-width="1.4"/>
+  <circle cx="32" cy="28.5" r="15" fill="none" stroke="#efd9a6" stroke-opacity="0.22" stroke-width="1"/>
+  <path d="M32 9v7M32 41v5M12 28.5h7M45 28.5h7" stroke="#efd9a6" stroke-width="1.7" stroke-linecap="round"/>
+  <path d="m18 14.5 5.3 5.3M40.7 37.2l5.3 5.3M46 14.5l-5.3 5.3M23.3 37.2 18 42.5" stroke="#cfa557" stroke-opacity="0.68" stroke-width="1.2" stroke-linecap="round"/>
+  <path d="m32 17.5 1.8 4.2 4.2 1.8-4.2 1.8-1.8 4.2-1.8-4.2-4.2-1.8 4.2-1.8 1.8-4.2Z" fill="#f2d58e"/>
+  <text x="32" y="39" fill="#f4dba0" font-family="PingFang SC, Hiragino Sans GB, STSong, serif" font-size="24" font-weight="700" text-anchor="middle">玄</text>
+  <text x="32" y="53" fill="#f4dba0" font-family="Arial, Helvetica, sans-serif" font-size="8" font-weight="700" letter-spacing="1.2" text-anchor="middle">AI</text>
 </svg>

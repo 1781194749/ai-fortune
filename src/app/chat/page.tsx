@@ -31,15 +31,31 @@ function getWuxingSummary(value: unknown) {
 export default async function ChatPage({
   searchParams,
 }: {
-  searchParams: Promise<{ method?: string | string[] }>;
+  searchParams: Promise<{
+    method?: string | string[];
+    question?: string | string[];
+  }>;
 }) {
-  const { method: rawMethod } = await searchParams;
+  const { method: rawMethod, question: rawQuestion } = await searchParams;
   const requestedMethod = Array.isArray(rawMethod) ? rawMethod[0] : rawMethod;
   const initialReadingMethod = isChatReadingMethod(requestedMethod) ? requestedMethod : undefined;
+  const requestedQuestion = Array.isArray(rawQuestion) ? rawQuestion[0] : rawQuestion;
+  const initialQuestion = requestedQuestion?.trim().slice(0, 400) ?? "";
   const session = await getSession();
 
   if (!session) {
-    redirect(createLoginHref(initialReadingMethod ? `/chat?method=${initialReadingMethod}` : "/chat"));
+    const returnParams = new URLSearchParams();
+
+    if (initialReadingMethod) {
+      returnParams.set("method", initialReadingMethod);
+    }
+
+    if (initialQuestion.length >= 2) {
+      returnParams.set("question", initialQuestion);
+    }
+
+    const returnTo = returnParams.size > 0 ? `/chat?${returnParams.toString()}` : "/chat";
+    redirect(createLoginHref(returnTo));
   }
 
   const [recentChats, profile, canAccessAdmin, inviteRewardSummary] = await Promise.all([
@@ -54,6 +70,7 @@ export default async function ChatPage({
       initialBalance={session.starBalance}
       initialRecentChats={recentChats}
       initialReadingMethod={initialReadingMethod}
+      initialQuestion={initialQuestion}
       inviteUrl={inviteRewardSummary.inviteUrl}
       account={{ email: session.emailMasked, tier: session.tier, canAccessAdmin }}
       profile={{

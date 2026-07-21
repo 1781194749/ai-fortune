@@ -25,6 +25,7 @@ cp .env.production.example .env.production.local
 
 ```env
 APP_URL="https://<your-domain>"
+ICP_RECORD_NO="京ICP备2026044070号"
 DATABASE_URL="postgresql://<user>:<password>@<postgres-host>:5432/<database>?schema=public"
 AUTH_SESSION_SECRET="<strong-random-secret>"
 ADMIN_ACCESS_TOKEN="<strong-random-admin-token>"
@@ -34,6 +35,15 @@ QINIU_SECRET_KEY="<qiniu-secret-key>"
 QINIU_BUCKET="<qiniu-bucket>"
 QINIU_PUBLIC_DOMAIN="https://<qiniu-public-domain>"
 ```
+
+当前线上域名分工：
+
+```text
+xuanji.click -> 120.53.234.90
+www.xuanji.click -> www-xuanji-click-idvrsqm.qiniudns.com
+```
+
+因此应用站点使用 `APP_URL="https://xuanji.click"`，七牛公开域名使用 `QINIU_PUBLIC_DOMAIN="https://www.xuanji.click"`。七牛侧还需要先给 `www.xuanji.click` 绑定 SSL 证书；证书完成前不要在 HTTPS 生产页面启用七牛图片链路。
 
 可以在本机或服务器运行下面的命令生成强密钥：
 
@@ -77,6 +87,13 @@ docker compose -f docker-compose.prod.yml --profile tools run --rm ai-fortune-to
 ```text
 主域名: <your-domain>
 代理地址: http://<server-internal-ip>:3000
+```
+
+本项目当前主域名填写：
+
+```text
+主域名: xuanji.click
+代理地址: http://ai-fortune:3000
 ```
 
 如果 OpenResty 与应用容器在同一个 Docker 网络，也可以代理到：

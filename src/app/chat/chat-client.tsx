@@ -1129,6 +1129,7 @@ export function ChatClient({
   initialBalance,
   initialRecentChats,
   initialReadingMethod,
+  initialQuestion,
   profile,
   account,
   inviteUrl,
@@ -1136,11 +1137,12 @@ export function ChatClient({
   initialBalance: number;
   initialRecentChats: RecentChatSession[];
   initialReadingMethod?: ChatReadingMethod;
+  initialQuestion?: string;
   profile: ChatProfileSummary;
   account: ChatAccountSummary;
   inviteUrl: string;
 }) {
-  const [question, setQuestion] = useState("");
+  const [question, setQuestion] = useState(initialQuestion ?? "");
   const [balance, setBalance] = useState(initialBalance);
   const [uploading, setUploading] = useState(false);
   const [deletingImage, setDeletingImage] = useState(false);

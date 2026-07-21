@@ -61,10 +61,10 @@ export type LaunchEnvDraft = {
 };
 
 const suggestedValues: Record<string, string> = {
-  APP_URL: "https://your-domain.com",
+  APP_URL: "https://xuanji.click",
   APP_LOCALE: "zh-CN",
   COMPANY_NAME: "<company-or-individual-business-name>",
-  ICP_RECORD_NO: "<icp-record-number>",
+  ICP_RECORD_NO: "京ICP备2026044070号",
   AUTH_SESSION_SECRET: "<generate-64-character-random-secret>",
   ADMIN_DASHBOARD_ENABLED: "true",
   ADMIN_ACCESS_TOKEN: "<generate-64-character-admin-token>",
@@ -99,9 +99,9 @@ const suggestedValues: Record<string, string> = {
   WECHAT_PAY_PLATFORM_PUBLIC_KEY: "<wechat-pay-platform-public-key>",
   QINIU_ACCESS_KEY: "<qiniu-access-key>",
   QINIU_SECRET_KEY: "<qiniu-secret-key>",
-  QINIU_BUCKET: "<qiniu-bucket>",
-  QINIU_REGION: "<qiniu-region>",
-  QINIU_PUBLIC_DOMAIN: "https://your-qiniu-public-domain",
+  QINIU_BUCKET: "ai-fortune",
+  QINIU_REGION: "",
+  QINIU_PUBLIC_DOMAIN: "https://www.xuanji.click",
 };
 
 function statusRank(status: HealthStatus) {

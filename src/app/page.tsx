@@ -5,19 +5,13 @@ import {
   LockKeyhole,
   MessageCircle,
   ShieldCheck,
-  Sparkles,
-  UserRound,
-  Workflow,
 } from "lucide-react";
 import { HomeCapabilityStage } from "./_components/home-capability-stage";
 import { HomeConversionPreview } from "./_components/home-conversion-preview";
 import { HomeHeroOracle } from "./_components/home-hero-oracle";
-import { InviteCopyButton } from "./_components/invite-copy-button";
 import { HomeProcessStage } from "./_components/home-process-stage";
 import { XuanjiMark } from "./_components/xuanji-mark";
-import { isAdminUserId } from "@/lib/admin-auth";
 import { getLegalEntity } from "@/lib/legal";
-import { getInviteRewardSummary } from "@/lib/invite-rewards";
 import { createLoginHref } from "@/lib/return-to";
 import { getSession } from "@/lib/session";
 import { brand } from "@/lib/site";
@@ -27,16 +21,8 @@ const trustPoints = ["档案仅用于个性化推演", "工具过程可见", "�
 export default async function Home() {
   const legalEntity = getLegalEntity();
   const session = await getSession();
-  const [inviteRewardSummary, canAccessAdmin] = session
-    ? await Promise.all([
-        getInviteRewardSummary(session.userId),
-        isAdminUserId(session.userId),
-      ])
-    : [null, false];
   const startHref = session ? "/chat" : createLoginHref("/chat");
-  const startLabel = session ? "继续问事" : "开始问事";
-  const accountHref = session ? "/member" : createLoginHref("/member");
-  const inviteLoginHref = createLoginHref("/member/invite");
+  const startLabel = "开始问事";
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-[#080907] text-[#f4efe5]">
@@ -57,28 +43,6 @@ export default async function Home() {
           </nav>
 
           <div className="flex items-center gap-2">
-            <Link
-              href={accountHref}
-              className="hidden h-10 items-center gap-2 rounded-full border border-[#3a3a31] bg-[#11120f]/65 px-4 text-sm font-medium text-[#ded6c8] transition hover:border-[#c9a35f]/55 hover:text-[#efd9a6] md:inline-flex"
-            >
-              <UserRound size={15} aria-hidden="true" />
-              个人中心
-            </Link>
-            {canAccessAdmin ? (
-              <Link
-                href="/admin"
-                className="hidden h-10 items-center gap-2 rounded-full border border-[#c9a35f]/35 bg-[#c9a35f]/9 px-4 text-sm font-medium text-[#efd9a6] transition hover:border-[#c9a35f]/65 hover:bg-[#c9a35f]/15 lg:inline-flex"
-              >
-                <Workflow size={15} aria-hidden="true" />
-                平台后台
-              </Link>
-            ) : null}
-            <InviteCopyButton
-              inviteUrl={inviteRewardSummary?.inviteUrl}
-              fallbackHref={inviteLoginHref}
-              label="邀请有礼"
-              className="hidden h-10 items-center gap-2 rounded-full border border-[#3c8b72]/45 bg-[#3c8b72]/10 px-4 text-sm font-medium text-[#8ad5bd] transition hover:border-[#8ad5bd]/70 hover:bg-[#3c8b72]/16 lg:inline-flex"
-            />
             <Link
               href={startHref}
               className="group inline-flex h-10 items-center gap-2 rounded-full border border-[#c9a35f]/45 bg-[#c9a35f]/10 px-4 text-sm font-medium text-[#efd9a6] transition hover:border-[#c9a35f]/70 hover:bg-[#c9a35f]/16"
@@ -109,44 +73,6 @@ export default async function Home() {
             <p className="mt-7 max-w-2xl text-base leading-8 text-[#aaa294] sm:text-lg sm:leading-9">
               先为你起盘建档，再结合塔罗、八字、八卦与近期对话，陪你把一个问题持续推演清楚。
             </p>
-            <div className="mt-9 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-              <Link
-                href={startHref}
-                className="group inline-flex h-13 items-center justify-center gap-3 rounded-full bg-[#c9a35f] px-7 font-semibold text-[#17130d] shadow-[0_14px_45px_rgba(201,163,95,0.18)] transition hover:bg-[#efd9a6]"
-              >
-                {startLabel}
-                <ArrowRight size={17} className="transition group-hover:translate-x-0.5" aria-hidden="true" />
-              </Link>
-              <Link
-                href="/tarot?spread=daily"
-                className="inline-flex h-13 items-center justify-center gap-3 rounded-full border border-[#3a3a31] bg-[#11120f]/65 px-7 font-medium text-[#ded6c8] transition hover:border-[#c9a35f]/55 hover:text-[#efd9a6]"
-              >
-                <Sparkles size={17} aria-hidden="true" />
-                免费每日单牌
-              </Link>
-              <Link
-                href={accountHref}
-                className="inline-flex h-13 items-center justify-center gap-3 rounded-full border border-[#3a3a31] bg-[#11120f]/65 px-7 font-medium text-[#ded6c8] transition hover:border-[#c9a35f]/55 hover:text-[#efd9a6]"
-              >
-                <UserRound size={17} aria-hidden="true" />
-                个人中心
-              </Link>
-              {canAccessAdmin ? (
-                <Link
-                  href="/admin"
-                  className="inline-flex h-13 items-center justify-center gap-3 rounded-full border border-[#c9a35f]/38 bg-[#c9a35f]/9 px-7 font-medium text-[#efd9a6] transition hover:border-[#c9a35f]/65 hover:bg-[#c9a35f]/15"
-                >
-                  <Workflow size={17} aria-hidden="true" />
-                  平台后台
-                </Link>
-              ) : null}
-              <InviteCopyButton
-                inviteUrl={inviteRewardSummary?.inviteUrl}
-                fallbackHref={inviteLoginHref}
-                label="邀请好友得星力"
-                className="inline-flex h-13 items-center justify-center gap-3 rounded-full border border-[#3c8b72]/45 bg-[#3c8b72]/12 px-7 font-medium text-[#8ad5bd] transition hover:border-[#8ad5bd]/65 hover:bg-[#3c8b72]/18 hover:text-[#d7fff1]"
-              />
-            </div>
             <div className="mt-9 flex flex-wrap gap-x-6 gap-y-3 text-xs text-[#777168]">
               {trustPoints.map((point) => (
                 <span key={point} className="inline-flex items-center gap-2">
@@ -210,7 +136,7 @@ export default async function Home() {
               href={startHref}
               className="group inline-flex h-14 items-center justify-center gap-3 rounded-full bg-[#c9a35f] px-9 font-semibold text-[#17130d] shadow-[0_18px_55px_rgba(201,163,95,0.2)] transition hover:bg-[#efd9a6]"
             >
-              {session ? "继续问事" : "建立档案，开始第一次问事"}
+              {session ? "开始问事" : "建立档案，开始第一次问事"}
               <ArrowRight size={18} className="transition group-hover:translate-x-0.5" aria-hidden="true" />
             </Link>
             <div className="mt-5 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-xs text-[#777168]">
