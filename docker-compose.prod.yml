@@ -47,7 +47,7 @@ services:
       NEXT_TELEMETRY_DISABLED: "1"
       REDIS_URL: redis://redis:6379
     ports:
-      - "${AI_FORTUNE_PORT:-3000}:3000"
+      - "127.0.0.1:${AI_FORTUNE_PORT:-3000}:3000"
     depends_on:
       postgres:
         condition: service_healthy
