@@ -44,6 +44,43 @@ jobs:
           chmod 600 ~/.ssh/ai_fortune_deploy_key
           ssh-keyscan -p "${SERVER_PORT:-22}" -H "${SERVER_HOST}" >> ~/.ssh/known_hosts
 
+      - name: Upload source
+        shell: bash
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+        run: |
+          set -euo pipefail
+
+          : "${SERVER_HOST:?Missing SERVER_HOST secret}"
+          : "${SERVER_USER:?Missing SERVER_USER secret}"
+
+          tar --exclude='.git' -czf /tmp/ai-fortune-source.tgz .
+          scp -i ~/.ssh/ai_fortune_deploy_key \
+            -P "${SERVER_PORT:-22}" \
+            -o IdentitiesOnly=yes \
+            /tmp/ai-fortune-source.tgz \
+            "${SERVER_USER}@${SERVER_HOST}:/tmp/ai-fortune-source.tgz"
+          ssh -i ~/.ssh/ai_fortune_deploy_key \
+            -p "${SERVER_PORT:-22}" \
+            -o IdentitiesOnly=yes \
+            "${SERVER_USER}@${SERVER_HOST}" \
+            "APP_DIR='${APP_DIR:-/opt/apps/ai-fortune}' bash -s" <<'REMOTE'
+          set -euo pipefail
+          if [ -z "${APP_DIR}" ] || [ "${APP_DIR}" = "/" ]; then
+            echo "Refusing unsafe APP_DIR=${APP_DIR}" >&2
+            exit 1
+          fi
+          sudo mkdir -p "$(dirname "${APP_DIR}")"
+          sudo chown "$(id -u):$(id -g)" "$(dirname "${APP_DIR}")"
+          mkdir -p "${APP_DIR}"
+          find "${APP_DIR}" -mindepth 1 \
+            ! -name '.env.production.local' \
+            ! -path "${APP_DIR}/.env.production.local" \
+            -exec rm -rf {} +
+          tar -xzf /tmp/ai-fortune-source.tgz -C "${APP_DIR}"
+REMOTE
+
       - name: Deploy
         shell: bash
         env:
@@ -59,7 +96,7 @@ jobs:
             -p "${SERVER_PORT:-22}" \
             -o IdentitiesOnly=yes \
             "${SERVER_USER}@${SERVER_HOST}" \
-            "APP_DIR='${APP_DIR:-/opt/apps/ai-fortune}' REPO_URL='${REPO_URL}' BRANCH='${BRANCH}' RUN_PRISMA_PUSH='${RUN_PRISMA_PUSH:-true}' bash -s" \
+            "APP_DIR='${APP_DIR:-/opt/apps/ai-fortune}' REPO_URL='${REPO_URL}' BRANCH='${BRANCH}' RUN_PRISMA_PUSH='${RUN_PRISMA_PUSH:-true}' SKIP_GIT_SYNC=true bash -s" \
             < scripts/deploy-1panel.sh
 
       - name: Public health check

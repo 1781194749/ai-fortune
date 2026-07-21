@@ -6,6 +6,7 @@ BRANCH="${BRANCH:-main}"
 COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.prod.yml}"
 REPO_URL="${REPO_URL:-https://github.com/1781194749/ai-fortune.git}"
 RUN_PRISMA_PUSH="${RUN_PRISMA_PUSH:-true}"
+SKIP_GIT_SYNC="${SKIP_GIT_SYNC:-false}"
 
 if ! command -v git >/dev/null 2>&1; then
   echo "git is required on the server." >&2
@@ -29,7 +30,7 @@ compose() {
   docker_cmd compose --env-file .env.production.local -f "${COMPOSE_FILE}" "$@"
 }
 
-if [ ! -d "${APP_DIR}/.git" ]; then
+if [ "${SKIP_GIT_SYNC}" != "true" ] && [ ! -d "${APP_DIR}/.git" ]; then
   if [ ! -w "$(dirname "${APP_DIR}")" ]; then
     sudo mkdir -p "$(dirname "${APP_DIR}")"
     sudo chown "$(id -u):$(id -g)" "$(dirname "${APP_DIR}")"
@@ -41,9 +42,11 @@ fi
 
 cd "${APP_DIR}"
 
-git fetch origin "${BRANCH}"
-git checkout "${BRANCH}"
-git reset --hard "origin/${BRANCH}"
+if [ "${SKIP_GIT_SYNC}" != "true" ] && [ -d ".git" ]; then
+  git fetch origin "${BRANCH}"
+  git checkout "${BRANCH}"
+  git reset --hard "origin/${BRANCH}"
+fi
 
 if [ ! -f ".env.production.local" ]; then
   echo "Missing ${APP_DIR}/.env.production.local; create it from .env.production.example before deploying." >&2
