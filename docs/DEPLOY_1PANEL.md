@@ -91,9 +91,9 @@ DATABASE_URL="postgresql://postgres:<strong-postgres-password>@postgres:5432/xua
 生产环境使用 Prisma migration 管理表结构。首次部署或 schema 变更后，在服务器项目目录运行：
 
 ```bash
-docker compose --env-file .env.production.local -f docker-compose.prod.yml --profile tools run --rm ai-fortune-tools npm run prisma:migrate:deploy
-docker compose --env-file .env.production.local -f docker-compose.prod.yml --profile tools run --rm ai-fortune-tools npm run db:seed
-docker compose --env-file .env.production.local -f docker-compose.prod.yml --profile tools run --rm ai-fortune-tools npm run launch:db-check
+docker compose --env-file .env.production.local -f docker-compose.prod.yml --profile tools run -T --interactive=false --rm ai-fortune-tools npm run prisma:migrate:deploy
+docker compose --env-file .env.production.local -f docker-compose.prod.yml --profile tools run -T --interactive=false --rm ai-fortune-tools npm run db:seed
+docker compose --env-file .env.production.local -f docker-compose.prod.yml --profile tools run -T --interactive=false --rm ai-fortune-tools npm run launch:db-check
 ```
 
 本地新增字段时先修改 `prisma/schema.prisma`，然后执行：
@@ -139,9 +139,9 @@ http://ai-fortune:3000
 容器启动并绑定 HTTPS 域名后运行：
 
 ```bash
-docker compose --env-file .env.production.local -f docker-compose.prod.yml --profile tools run --rm ai-fortune-tools npm run launch:url-check
-docker compose --env-file .env.production.local -f docker-compose.prod.yml --profile tools run --rm ai-fortune-tools npm run launch:preflight
-docker compose --env-file .env.production.local -f docker-compose.prod.yml --profile tools run --rm ai-fortune-tools npm run launch:production-gate
+docker compose --env-file .env.production.local -f docker-compose.prod.yml --profile tools run -T --interactive=false --rm ai-fortune-tools npm run launch:url-check
+docker compose --env-file .env.production.local -f docker-compose.prod.yml --profile tools run -T --interactive=false --rm ai-fortune-tools npm run launch:preflight
+docker compose --env-file .env.production.local -f docker-compose.prod.yml --profile tools run -T --interactive=false --rm ai-fortune-tools npm run launch:production-gate
 ```
 
 `launch:production-gate` 没有 blocking 后，再进入真实支付灰度和正式放量。
@@ -152,8 +152,8 @@ docker compose --env-file .env.production.local -f docker-compose.prod.yml --pro
 
 ```bash
 docker compose --env-file .env.production.local -f docker-compose.prod.yml --profile tools build ai-fortune ai-fortune-tools
-docker compose --env-file .env.production.local -f docker-compose.prod.yml --profile tools run --rm ai-fortune-tools npm run prisma:migrate:deploy
-docker compose --env-file .env.production.local -f docker-compose.prod.yml --profile tools run --rm ai-fortune-tools npm run db:seed
+docker compose --env-file .env.production.local -f docker-compose.prod.yml --profile tools run -T --interactive=false --rm ai-fortune-tools npm run prisma:migrate:deploy
+docker compose --env-file .env.production.local -f docker-compose.prod.yml --profile tools run -T --interactive=false --rm ai-fortune-tools npm run db:seed
 docker compose --env-file .env.production.local -f docker-compose.prod.yml up -d --remove-orphans
 ```
 

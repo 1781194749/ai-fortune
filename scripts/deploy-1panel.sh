@@ -33,6 +33,10 @@ compose() {
   docker_cmd compose --env-file .env.production.local -f "${COMPOSE_FILE}" "$@"
 }
 
+compose_no_stdin() {
+  compose "$@" </dev/null
+}
+
 backup_postgres() {
   if [ "${RUN_DB_BACKUP}" = "false" ]; then
     return
@@ -43,7 +47,7 @@ backup_postgres() {
 
   sudo mkdir -p "${DB_BACKUP_DIR}"
   sudo chown "$(id -u):$(id -g)" "${DB_BACKUP_DIR}"
-  compose exec -T postgres sh -lc 'pg_dump -h 127.0.0.1 -U "$POSTGRES_USER" "$POSTGRES_DB"' \
+  compose_no_stdin exec -T postgres sh -lc 'pg_dump -h 127.0.0.1 -U "$POSTGRES_USER" "$POSTGRES_DB"' \
     | gzip > "${DB_BACKUP_DIR}/${backup_name}"
   find "${DB_BACKUP_DIR}" -type f -name 'predeploy-*.sql.gz' -mtime +30 -delete
   echo "PostgreSQL backup written to ${DB_BACKUP_DIR}/${backup_name}"
@@ -72,23 +76,23 @@ if [ ! -f ".env.production.local" ]; then
   exit 1
 fi
 
-compose --profile tools build ai-fortune ai-fortune-tools
-compose up -d --wait postgres redis
+compose_no_stdin --profile tools build ai-fortune ai-fortune-tools
+compose_no_stdin up -d --wait postgres redis
 
 if [ "${RUN_PRISMA_MIGRATE}" != "false" ]; then
   backup_postgres
-  compose --profile tools run -T --interactive=false --rm ai-fortune-tools npm run prisma:migrate:deploy
+  compose_no_stdin --profile tools run -T --interactive=false --rm ai-fortune-tools npm run prisma:migrate:deploy
 fi
 
 if [ "${RUN_DB_SEED}" != "false" ]; then
-  compose --profile tools run -T --interactive=false --rm ai-fortune-tools npm run db:seed
+  compose_no_stdin --profile tools run -T --interactive=false --rm ai-fortune-tools npm run db:seed
 fi
 
-compose up -d --remove-orphans
-compose ps
+compose_no_stdin up -d --remove-orphans
+compose_no_stdin ps
 
 if command -v curl >/dev/null 2>&1; then
-  APP_PORT="$(compose port ai-fortune 3000 2>/dev/null | awk -F: 'END { print $NF }')"
+  APP_PORT="$(compose_no_stdin port ai-fortune 3000 2>/dev/null | awk -F: 'END { print $NF }')"
   APP_PORT="${APP_PORT:-3000}"
   curl --fail --silent --show-error --retry 12 --retry-delay 5 "http://127.0.0.1:${APP_PORT}/" >/dev/null
 fi
