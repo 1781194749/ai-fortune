@@ -65,21 +65,8 @@ jobs:
             -p "${SERVER_PORT:-22}" \
             -o IdentitiesOnly=yes \
             "${SERVER_USER}@${SERVER_HOST}" \
-            "APP_DIR='${APP_DIR:-/opt/apps/ai-fortune}' bash -s" <<'REMOTE'
-          set -euo pipefail
-          if [ -z "${APP_DIR}" ] || [ "${APP_DIR}" = "/" ]; then
-            echo "Refusing unsafe APP_DIR=${APP_DIR}" >&2
-            exit 1
-          fi
-          sudo mkdir -p "$(dirname "${APP_DIR}")"
-          sudo chown "$(id -u):$(id -g)" "$(dirname "${APP_DIR}")"
-          mkdir -p "${APP_DIR}"
-          find "${APP_DIR}" -mindepth 1 \
-            ! -name '.env.production.local' \
-            ! -path "${APP_DIR}/.env.production.local" \
-            -exec rm -rf {} +
-          tar -xzf /tmp/ai-fortune-source.tgz -C "${APP_DIR}"
-REMOTE
+            "APP_DIR='${APP_DIR:-/opt/apps/ai-fortune}' bash -s" \
+            < scripts/deploy-upload-source.sh
 
       - name: Deploy
         shell: bash
