@@ -7,6 +7,7 @@ ENV NEXT_TELEMETRY_DISABLED=1
 FROM base AS deps
 
 COPY package.json package-lock.json ./
+RUN npm config set registry https://registry.npmmirror.com
 RUN npm ci
 
 FROM deps AS tools
