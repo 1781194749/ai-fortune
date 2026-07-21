@@ -338,7 +338,7 @@ function buildSteps(input: {
     {
       id: "schema",
       order: 3,
-      title: "生成 Prisma Client 并同步 Schema",
+      title: "生成 Prisma Client 并部署 Migration",
       status: schemaStatus(input.persistence),
       owner: "技术",
       detail:
@@ -347,11 +347,11 @@ function buildSteps(input: {
           : "当前业务数据还没有命中 PostgreSQL 持久化。",
       action:
         input.persistence.storeMode === "database"
-          ? "保留迁移或 db push 日志；正式上线前再对生产库执行一次只读核对。"
-          : "先在生产连接串可用后执行 Prisma 生成和 Schema 同步，再重启应用。",
+          ? "保留 migration deploy 日志；正式上线前再对生产库执行一次只读核对。"
+          : "先在生产连接串可用后执行 Prisma 生成和 migration deploy，再重启应用。",
       evidence:
         schemaEvidence ?? "Prisma 命令输出、部署日志和数据库表结构已创建记录。",
-      command: "npm run prisma:generate && npm run prisma:push",
+      command: "npm run prisma:generate && npm run prisma:migrate:deploy",
     },
     {
       id: "probe",
@@ -448,9 +448,9 @@ function buildCommandGroups() {
           detail: "生成当前 schema 对应的 Prisma client。",
         },
         {
-          label: "同步数据库结构",
-          command: "npm run prisma:push",
-          detail: "第一版可用 db push 建表；后续稳定后再切正式 migration 流程。",
+          label: "部署数据库迁移",
+          command: "npm run prisma:migrate:deploy",
+          detail: "生产环境只执行已提交的 migration，不使用 db push 改表。",
         },
         {
           label: "核心表检查",

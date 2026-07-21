@@ -20,7 +20,8 @@ jobs:
       BRANCH: main
       HEALTHCHECK_URL: ${{ vars.HEALTHCHECK_URL }}
       REPO_URL: https://github.com/1781194749/ai-fortune.git
-      RUN_PRISMA_PUSH: ${{ vars.RUN_PRISMA_PUSH }}
+      RUN_PRISMA_MIGRATE: ${{ vars.RUN_PRISMA_MIGRATE }}
+      RUN_DB_SEED: ${{ vars.RUN_DB_SEED }}
       SERVER_PORT: ${{ secrets.SERVER_PORT }}
 
     steps:
@@ -84,7 +85,7 @@ jobs:
             -p "${SERVER_PORT:-22}" \
             -o IdentitiesOnly=yes \
             "${SERVER_USER}@${SERVER_HOST}" \
-            "APP_DIR='${APP_DIR:-/opt/apps/ai-fortune}' REPO_URL='${REPO_URL}' BRANCH='${BRANCH}' RUN_PRISMA_PUSH='${RUN_PRISMA_PUSH:-true}' SKIP_GIT_SYNC=true bash -s" \
+            "APP_DIR='${APP_DIR:-/opt/apps/ai-fortune}' REPO_URL='${REPO_URL}' BRANCH='${BRANCH}' RUN_PRISMA_MIGRATE='${RUN_PRISMA_MIGRATE:-true}' RUN_DB_SEED='${RUN_DB_SEED:-true}' SKIP_GIT_SYNC=true bash -s" \
             < scripts/deploy-1panel.sh
 
       - name: Public health check

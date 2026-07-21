@@ -1,6 +1,6 @@
 import "server-only";
 
-import { AuthProvider, WalletEventType } from "@/generated/prisma/enums";
+import { AuthProvider, UserRole, WalletEventType } from "@/generated/prisma/enums";
 import type { Prisma } from "@/generated/prisma/client";
 import { freeStarterStarGrant, type MembershipTierCode } from "@/lib/commerce";
 import {
@@ -29,6 +29,7 @@ export type AdminUserRecord = {
   email?: string;
   displayName?: string;
   avatarUrl?: string;
+  role?: UserRole;
   authProviders?: string[];
   tier: MembershipTierCode;
   starBalance: number;
@@ -62,6 +63,7 @@ export function rememberAdminUser(input: {
   avatarUrl?: string;
   tier?: MembershipTierCode;
   starBalance?: number;
+  role?: UserRole;
 }) {
   const now = new Date().toISOString();
   const current = adminUsers.get(input.userId);
@@ -71,6 +73,7 @@ export function rememberAdminUser(input: {
     email: input.email ?? current?.email,
     displayName: input.displayName ?? current?.displayName,
     avatarUrl: input.avatarUrl ?? current?.avatarUrl,
+    role: input.role ?? current?.role ?? UserRole.USER,
     authProviders: current?.authProviders,
     tier: input.tier ?? current?.tier ?? "FREE",
     starBalance: input.starBalance ?? current?.starBalance ?? 0,
@@ -471,6 +474,25 @@ export async function getPersistedUserEmail(userId: string) {
   return adminUsers.get(userId)?.email;
 }
 
+export async function getPersistedUserRole(userId: string) {
+  const dbResult = await tryPrisma(async (prisma) => {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true },
+    });
+
+    return user?.role;
+  });
+
+  if (dbResult.ok) {
+    return dbResult.value;
+  }
+
+  requireUserDatabaseRead();
+
+  return adminUsers.get(userId)?.role;
+}
+
 export async function getAdminUser(userId: string) {
   const dbResult = await tryPrisma(async (prisma) => {
     const user = await prisma.user.findUnique({
@@ -493,6 +515,7 @@ export async function getAdminUser(userId: string) {
       email: user.email ?? undefined,
       displayName: user.displayName ?? undefined,
       avatarUrl: user.avatarUrl ?? undefined,
+      role: user.role,
       authProviders: user.accounts.map((account) => account.provider),
       tier: accountState.tier,
       starBalance: accountState.starBalance,
@@ -529,10 +552,11 @@ export async function getAdminUsers(input: { take?: number } = {}) {
 
         return {
           id: user.id,
-          email: user.email ?? undefined,
-          displayName: user.displayName ?? undefined,
-          avatarUrl: user.avatarUrl ?? undefined,
-          authProviders: user.accounts.map((account) => account.provider),
+            email: user.email ?? undefined,
+            displayName: user.displayName ?? undefined,
+            avatarUrl: user.avatarUrl ?? undefined,
+            role: user.role,
+            authProviders: user.accounts.map((account) => account.provider),
           tier: accountState.tier,
           starBalance: accountState.starBalance,
           createdAt: user.createdAt.toISOString(),

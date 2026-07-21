@@ -6,6 +6,7 @@ import { EnvHttpProxyAgent, fetch as undiciFetch } from "undici";
 const googleAuthorizationEndpoint = "https://accounts.google.com/o/oauth2/v2/auth";
 const googleTokenEndpoint = "https://oauth2.googleapis.com/token";
 const googleUserInfoEndpoint = "https://openidconnect.googleapis.com/v1/userinfo";
+const googleCallbackPath = "/api/auth/google/callback";
 const googleProxyDispatcher =
   process.env.HTTP_PROXY || process.env.HTTPS_PROXY || process.env.http_proxy || process.env.https_proxy
     ? new EnvHttpProxyAgent()
@@ -41,6 +42,34 @@ function requiredConfig() {
   }
 
   return { clientId, clientSecret };
+}
+
+function configuredAppOrigin() {
+  const appUrl = process.env.APP_URL?.trim();
+
+  if (!appUrl) {
+    return undefined;
+  }
+
+  try {
+    const parsed = new URL(appUrl);
+
+    if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+      return parsed.origin;
+    }
+  } catch {
+    return undefined;
+  }
+
+  return undefined;
+}
+
+export function getPublicAppOrigin(fallbackOrigin: string) {
+  return configuredAppOrigin() ?? fallbackOrigin;
+}
+
+export function getGoogleRedirectUri(fallbackOrigin: string) {
+  return new URL(googleCallbackPath, getPublicAppOrigin(fallbackOrigin)).toString();
 }
 
 export function isGoogleAuthConfigured() {

@@ -97,23 +97,25 @@ export function getProductionHealthChecks(env: Env = process.env) {
       label: "PostgreSQL DATABASE_URL",
       status: present(env, "DATABASE_URL") ? "ready" : "blocking",
       detail: present(env, "DATABASE_URL") ? "已配置" : "未配置",
-      action: "配置生产 PostgreSQL，并执行 Prisma 迁移或 npm run prisma:push。",
+      action: "配置生产 PostgreSQL，并执行 npm run prisma:migrate:deploy。",
     }),
     check({
       id: "admin",
       group: "基础配置",
       label: "后台访问保护",
       status:
-        env.ADMIN_DASHBOARD_ENABLED === "true" && present(env, "ADMIN_ACCESS_TOKEN")
+        env.ADMIN_DASHBOARD_ENABLED === "true" &&
+        present(env, "ADMIN_ACCESS_TOKEN") &&
+        present(env, "ADMIN_EMAIL")
           ? "ready"
           : "blocking",
       detail:
         env.ADMIN_DASHBOARD_ENABLED === "true"
-          ? present(env, "ADMIN_ACCESS_TOKEN")
-            ? "已开启并配置 token"
-            : "已开启但缺 token"
+          ? present(env, "ADMIN_ACCESS_TOKEN") && present(env, "ADMIN_EMAIL")
+            ? "已开启并配置 token / 管理员邮箱"
+            : "已开启但缺 token 或管理员邮箱"
           : "未开启",
-      action: "生产环境启用后台时必须设置 ADMIN_ACCESS_TOKEN；不开启则 /admin 返回 404。",
+      action: "生产环境启用后台时必须设置 ADMIN_ACCESS_TOKEN 和 ADMIN_EMAIL；不开启则 /admin 返回 404。",
     }),
     check({
       id: "login-any",

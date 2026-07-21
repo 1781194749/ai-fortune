@@ -1,6 +1,11 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { exchangeGoogleCode, getGoogleUser } from "@/lib/google-auth";
+import {
+  exchangeGoogleCode,
+  getGoogleRedirectUri,
+  getGoogleUser,
+  getPublicAppOrigin,
+} from "@/lib/google-auth";
 import { maskEmail, normalizeEmail } from "@/lib/email-auth";
 import { createSession } from "@/lib/session";
 import { completeInviteRewardForLogin } from "@/lib/invite-rewards";
@@ -14,6 +19,7 @@ const attemptCookie = "xuanji_google_oauth";
 
 export async function GET(request: Request) {
   const requestUrl = new URL(request.url);
+  const publicOrigin = getPublicAppOrigin(requestUrl.origin);
   const cookieStore = await cookies();
   const encodedAttempt = cookieStore.get(attemptCookie)?.value;
   cookieStore.delete(attemptCookie);
@@ -31,7 +37,7 @@ export async function GET(request: Request) {
       throw new Error("Invalid Google OAuth callback.");
     }
 
-    const redirectUri = new URL("/api/auth/google/callback", requestUrl.origin).toString();
+    const redirectUri = getGoogleRedirectUri(requestUrl.origin);
     const accessToken = await exchangeGoogleCode({ code, codeVerifier: attempt.codeVerifier, redirectUri });
     const googleUser = await getGoogleUser(accessToken);
     const email = normalizeEmail(googleUser.email);
@@ -61,11 +67,11 @@ export async function GET(request: Request) {
       isNewUser: account.isNewUser,
     });
 
-    return NextResponse.redirect(new URL(redirectTo, requestUrl.origin));
+    return NextResponse.redirect(new URL(redirectTo, publicOrigin));
   } catch (error) {
     if (isDatabaseUnavailableError(error)) {
       return NextResponse.redirect(
-        new URL("/login?googleError=database_unavailable", requestUrl.origin),
+        new URL("/login?googleError=database_unavailable", publicOrigin),
       );
     }
 
@@ -73,6 +79,6 @@ export async function GET(request: Request) {
       "Google OAuth callback failed:",
       error instanceof Error ? error.message : "Unknown error",
     );
-    return NextResponse.redirect(new URL("/login?googleError=callback_failed", requestUrl.origin));
+    return NextResponse.redirect(new URL("/login?googleError=callback_failed", publicOrigin));
   }
 }

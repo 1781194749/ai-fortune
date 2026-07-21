@@ -4085,7 +4085,7 @@ export default async function AdminHealthPage({
                 回调、域名与协议链接
               </h2>
               <p className="mt-3 max-w-3xl leading-7 text-[#b9ad99]">
-                集中列出支付宝、微信支付、七牛、协议材料和微信开放平台申请时需要填写或核对的 URL。
+                集中列出 Google 登录、支付宝、微信支付、七牛、协议材料和微信开放平台申请时需要填写或核对的 URL。
               </p>
               <p className="mt-2 max-w-3xl break-all leading-7 text-[#d8cab2]">
                 APP_URL：{launchCallbacks.appUrl}

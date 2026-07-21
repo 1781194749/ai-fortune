@@ -103,7 +103,7 @@
 
 ## 下一轮优先级
 
-1. 生产数据库：先看 `/admin/health` 的数据库落地计划，配置 Postgres 后运行 `npm run launch:db-check` 验证连接，再执行 `npm run prisma:push` 或正式迁移，并用 `npm run launch:db-check -- --schema` 验核心表，最后运行落库探针；通过数据库验收证据快填保存连接、迁移、探针、备份和恢复演练证据，确认外部事项、本周承诺、今日动作执行记录、目标推进记录、第三方诊断、AI/图片验收、AI 成本样本、数据库验收和上线证据都有持久化记录。
+1. 生产数据库：先看 `/admin/health` 的数据库落地计划，配置 Postgres 后运行 `npm run launch:db-check` 验证连接，再执行 `npm run prisma:migrate:deploy`，并用 `npm run launch:db-check -- --schema` 验核心表，最后运行落库探针；通过数据库验收证据快填保存连接、迁移、探针、备份和恢复演练证据，确认外部事项、本周承诺、今日动作执行记录、目标推进记录、第三方诊断、AI/图片验收、AI 成本样本、数据库验收和上线证据都有持久化记录。
 2. 域名与部署：先看 `/admin/health` 的生产变量批次清单和域名与部署落地计划，运行 `npm run launch:secrets` 生成后台 token 与会话密钥，完成域名/DNS、HTTPS APP_URL、部署平台变量、公网回调、页面烟测和回滚证据，再运行 `npm run launch:url-check` 与 `npm run launch:preflight` 直到无 blocking；通过部署验收证据快填保存 URL 检查、预检输出、页面烟测和回滚记录。
 3. 外部事项：在 `/admin/health` 先看线下办理行动包确认今天先办事项，运行 `npm run launch:offline-action-check` 复核材料模板、主体路径、外部事项和后台区块，再看创始人办理包里的主体路径决策助手，确认第一版国内收费主体路径，随后跟踪主体、域名、ICP备案、支付商户、七牛和 OpenAI 办理状态、目标日期、提交回执、证据链接和证据备注，并按办理资料包准备材料、变量和验收凭证；处理中和已提交只表示进度，未完成前仍进入 Go/No-Go 阻断。
 4. 上线 Runbook：逐项收集 `/admin/health` 中的负责人动作和验收证据，直到无 blocking。

@@ -275,6 +275,14 @@ function buildTargets(env) {
       acceptedStatuses: [200, 307, 308],
     },
     {
+      id: "google-auth-entry",
+      label: "Google 登录入口",
+      method: "GET",
+      route: "/api/auth/google?returnTo=%2Fchat",
+      required: true,
+      acceptedStatuses: [301, 302, 303, 307, 308],
+    },
+    {
       id: "admin-health",
       label: "后台健康页",
       method: "GET",

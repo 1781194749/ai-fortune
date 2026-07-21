@@ -2,12 +2,12 @@ import "server-only";
 
 import { timingSafeEqual } from "crypto";
 import { cookies } from "next/headers";
+import { UserRole } from "@/generated/prisma/enums";
 import { emailToUserId } from "@/lib/email-auth";
 import { getSession } from "@/lib/session";
-import { getPersistedUserEmail } from "@/lib/user-store";
+import { getPersistedUserEmail, getPersistedUserRole } from "@/lib/user-store";
 
 export const adminEmail = "a1781194749@gmail.com";
-const adminUserId = emailToUserId(adminEmail);
 type AdminSearchParams = Record<string, string | string[] | undefined>;
 
 function normalizeEmail(email: string | undefined) {
@@ -26,6 +26,16 @@ function readFlag(value: string | undefined) {
   }
 
   return undefined;
+}
+
+function configuredAdminEmails(env: NodeJS.ProcessEnv = process.env) {
+  const configured = env.ADMIN_EMAILS || env.ADMIN_EMAIL || adminEmail;
+  const emails = configured
+    .split(",")
+    .map((email) => normalizeEmail(email))
+    .filter((email): email is string => Boolean(email));
+
+  return [...new Set(emails)];
 }
 
 export function isAdminDashboardEnabled(env: NodeJS.ProcessEnv = process.env) {
@@ -85,12 +95,20 @@ export function isValidAdminAccessToken(
 }
 
 export async function isAdminUserId(userId: string) {
-  if (userId === adminUserId) {
+  const role = await getPersistedUserRole(userId);
+
+  if (role === UserRole.ADMIN) {
+    return true;
+  }
+
+  const adminEmails = configuredAdminEmails();
+
+  if (adminEmails.some((email) => userId === emailToUserId(email))) {
     return true;
   }
 
   const email = await getPersistedUserEmail(userId);
-  return normalizeEmail(email) === adminEmail;
+  return adminEmails.includes(normalizeEmail(email) ?? "");
 }
 
 export async function getAdminAccess(searchParams?: AdminSearchParams) {

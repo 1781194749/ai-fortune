@@ -162,6 +162,7 @@ export function getLaunchCallbackChecklist(env: Env = process.env) {
   const appUrl = rawAppUrl(env);
   const baseStatus = appUrlStatus(appUrl);
   const domain = hostname(appUrl);
+  const googleLoginEnabled = env.AUTH_GOOGLE_ENABLED === "true";
   const wechatLoginEnabled = env.AUTH_WECHAT_ENABLED === "true";
   const items = [
     {
@@ -177,6 +178,43 @@ export function getLaunchCallbackChecklist(env: Env = process.env) {
       action: "配置正式 HTTPS 域名，不能使用 localhost、占位域名或 HTTP。",
       evidence: "首页、登录页、会员页和公开分享页均可通过 APP_URL 访问。",
       status: itemStatus({ baseStatus, requiredForLaunch: true, implemented: true }),
+    },
+    {
+      id: "google:javascript-origin",
+      group: "Google 登录",
+      title: "Google OAuth 授权来源",
+      requiredForLaunch: googleLoginEnabled,
+      implemented: true,
+      platform: "Google Cloud Console",
+      configName: "Authorized JavaScript origin",
+      value: appUrl,
+      detail: "Google Web OAuth Client 的线上来源，需要与正式 APP_URL 保持一致。",
+      action: "在 Google Cloud Console 的 OAuth Client 中添加该线上来源，并保持 APP_URL 指向同一 HTTPS 域名。",
+      evidence: "Google OAuth Client 配置页截图；线上登录入口能跳转到 accounts.google.com。",
+      status: itemStatus({
+        baseStatus,
+        requiredForLaunch: googleLoginEnabled,
+        implemented: true,
+      }),
+    },
+    {
+      id: "google:redirect-uri",
+      group: "Google 登录",
+      title: "Google OAuth 重定向 URI",
+      requiredForLaunch: googleLoginEnabled,
+      implemented: true,
+      platform: "Google Cloud Console",
+      configName: "Authorized redirect URI",
+      value: `${appUrl}/api/auth/google/callback`,
+      method: "GET",
+      detail: "服务端 Google OAuth 登录使用该地址接收 code，并用同一个 redirect_uri 交换 token。",
+      action: "在 Google Cloud Console 的 OAuth Client 中添加该线上重定向 URI；本项目运行时会优先用 APP_URL 生成这个地址。",
+      evidence: "Google OAuth Client 配置页截图；线上 Google 邮箱登录完成后能回到 Chat 或购买意图页。",
+      status: itemStatus({
+        baseStatus,
+        requiredForLaunch: googleLoginEnabled,
+        implemented: true,
+      }),
     },
     {
       id: "alipay:notify-url",

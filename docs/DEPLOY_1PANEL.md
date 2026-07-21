@@ -29,11 +29,19 @@ ICP_RECORD_NO="京ICP备2026044070号"
 DATABASE_URL="postgresql://<user>:<password>@<postgres-host>:5432/<database>?schema=public"
 AUTH_SESSION_SECRET="<strong-random-secret>"
 ADMIN_ACCESS_TOKEN="<strong-random-admin-token>"
+ADMIN_EMAIL="a1781194749@gmail.com"
 OPENAI_API_KEY="<openai-api-key>"
 QINIU_ACCESS_KEY="<qiniu-access-key>"
 QINIU_SECRET_KEY="<qiniu-secret-key>"
 QINIU_BUCKET="<qiniu-bucket>"
 QINIU_PUBLIC_DOMAIN="https://<qiniu-public-domain>"
+```
+
+Google 邮箱登录上线时，还需要在 Google Cloud Console 的 Web OAuth Client 里添加线上配置：
+
+```text
+Authorized JavaScript origin: https://<your-domain>
+Authorized redirect URI: https://<your-domain>/api/auth/google/callback
 ```
 
 当前线上域名分工：
@@ -80,14 +88,21 @@ DATABASE_URL="postgresql://postgres:<strong-postgres-password>@postgres:5432/xua
 
 ## 4. 初始化数据库
 
-首次部署或 schema 变更后，在服务器项目目录运行：
+生产环境使用 Prisma migration 管理表结构。首次部署或 schema 变更后，在服务器项目目录运行：
 
 ```bash
-docker compose --env-file .env.production.local -f docker-compose.prod.yml --profile tools run --rm ai-fortune-tools npm run prisma:push
+docker compose --env-file .env.production.local -f docker-compose.prod.yml --profile tools run --rm ai-fortune-tools npm run prisma:migrate:deploy
+docker compose --env-file .env.production.local -f docker-compose.prod.yml --profile tools run --rm ai-fortune-tools npm run db:seed
 docker compose --env-file .env.production.local -f docker-compose.prod.yml --profile tools run --rm ai-fortune-tools npm run launch:db-check
 ```
 
-正式上线后建议逐步切换到 Prisma migration 流程，避免数据库结构变更缺少可审计记录。
+本地新增字段时先修改 `prisma/schema.prisma`，然后执行：
+
+```bash
+npm run prisma:migrate -- --name <change-name>
+```
+
+提交 `prisma/schema.prisma` 和新生成的 `prisma/migrations/<timestamp>_<change-name>/migration.sql`。线上自动部署会先备份 PostgreSQL，再执行 `npm run prisma:migrate:deploy`。
 
 ## 5. 配置 1Panel 网站反向代理
 
@@ -137,7 +152,8 @@ docker compose --env-file .env.production.local -f docker-compose.prod.yml --pro
 
 ```bash
 docker compose --env-file .env.production.local -f docker-compose.prod.yml --profile tools build ai-fortune ai-fortune-tools
-docker compose --env-file .env.production.local -f docker-compose.prod.yml --profile tools run --rm ai-fortune-tools npm run prisma:push
+docker compose --env-file .env.production.local -f docker-compose.prod.yml --profile tools run --rm ai-fortune-tools npm run prisma:migrate:deploy
+docker compose --env-file .env.production.local -f docker-compose.prod.yml --profile tools run --rm ai-fortune-tools npm run db:seed
 docker compose --env-file .env.production.local -f docker-compose.prod.yml up -d --remove-orphans
 ```
 
@@ -155,9 +171,10 @@ SERVER_PORT=22
 ```text
 APP_DIR=/opt/apps/ai-fortune
 HEALTHCHECK_URL=https://xuanji.click/
-RUN_PRISMA_PUSH=true
+RUN_PRISMA_MIGRATE=true
+RUN_DB_SEED=true
 ```
 
-`RUN_PRISMA_PUSH` 默认为 `true`，部署时会在启动容器前执行 `npm run prisma:push`。以后切到严格 migration 流程后，可以把它设为 `false`，改用 migration 命令。
+`RUN_PRISMA_MIGRATE` 默认为 `true`，部署时会在启动容器前执行 `npm run prisma:migrate:deploy`。`RUN_DB_SEED` 默认为 `true`，会用 `ADMIN_EMAIL`/`ADMIN_EMAILS` 幂等初始化管理员角色。迁移前会自动备份 PostgreSQL 到 `/opt/backups/ai-fortune/postgres`。
 
 服务器上需要提前准备好 `${APP_DIR}/.env.production.local`。首次部署时，如果 `${APP_DIR}` 不存在，脚本会自动从 `https://github.com/1781194749/ai-fortune.git` 克隆 `main` 分支。

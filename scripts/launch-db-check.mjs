@@ -410,7 +410,7 @@ async function checkConnection(input) {
         action:
           missing.length === 0
             ? "保留 schema 检查结果，继续运行后台落库探针。"
-            : "先运行 npm run prisma:push 或正式迁移，再重新运行 npm run launch:db-check -- --schema。",
+            : "先运行 npm run prisma:migrate:deploy，再重新运行 npm run launch:db-check -- --schema。",
       });
     }
   } catch (error) {

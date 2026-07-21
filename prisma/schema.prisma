@@ -19,6 +19,11 @@ enum AuthProvider {
   APPLE
 }
 
+enum UserRole {
+  USER
+  ADMIN
+}
+
 enum MembershipTier {
   FREE
   TRIAL
@@ -121,6 +126,7 @@ model User {
   email               String?                  @unique
   displayName         String?
   avatarUrl           String?
+  role                UserRole                 @default(USER)
   locale              String                   @default("zh-CN")
   createdAt           DateTime                 @default(now())
   updatedAt           DateTime                 @updatedAt
@@ -136,6 +142,8 @@ model User {
   deepReportJobs      DeepReportJob[]
   imageUploads        ImageUpload[]
   usageLogs           UsageLog[]
+
+  @@index([role])
 }
 
 model AuthAccount {

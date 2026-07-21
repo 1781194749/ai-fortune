@@ -21,6 +21,7 @@
     "redis:down": "docker compose stop redis",
     "redis:status": "docker compose ps redis",
     "redis:logs": "docker compose logs -f redis",
+    "prod:tunnel": "bash scripts/tunnel-production-data.sh",
     "launch:secrets": "node scripts/launch-secrets.mjs",
     "launch:db-check": "node scripts/launch-db-check.mjs",
     "launch:url-check": "node scripts/launch-url-check.mjs",
@@ -49,7 +50,9 @@
     "launch:preflight:example": "node scripts/launch-preflight.mjs --env .env.production.example --no-fail",
     "prisma:generate": "prisma generate",
     "prisma:push": "prisma db push",
-    "prisma:migrate": "prisma migrate dev"
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:migrate:deploy": "prisma migrate deploy",
+    "db:seed": "node scripts/seed-admin.mjs"
   },
   "dependencies": {
     "@ai-sdk/openai": "^4.0.11",

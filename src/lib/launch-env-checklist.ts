@@ -130,6 +130,14 @@ const specs = [
     action: "生成至少 32 字符后台访问 token，避免使用容易猜测的字符串。",
   },
   {
+    key: "ADMIN_EMAIL",
+    group: "后台与安全",
+    label: "管理员邮箱",
+    kind: "plain",
+    statusWhenInvalid: "blocking",
+    action: "填写可登录后台的 Google 邮箱，并通过 npm run db:seed 写入数据库管理员角色。",
+  },
+  {
     key: "DATABASE_URL",
     group: "生产数据",
     label: "PostgreSQL 连接串",

@@ -270,7 +270,7 @@ function callbackDetail(items: Array<LaunchCallbackItem | undefined>) {
   }
 
   if (missing.length === 0) {
-    return "支付、七牛和协议公网地址均已通过核对。";
+    return "登录、支付、七牛和协议公网地址均已通过核对。";
   }
 
   return `待处理回调：${missing.map((item) => `${item.platform}/${item.configName}`).join("、")}`;
@@ -352,6 +352,7 @@ function buildSteps(input: {
   const adminEnvItems = [
     envItems.get("ADMIN_DASHBOARD_ENABLED"),
     envItems.get("ADMIN_ACCESS_TOKEN"),
+    envItems.get("ADMIN_EMAIL"),
   ];
   const authSecret = envItems.get("AUTH_SESSION_SECRET");
   const healthSummary = summarizeHealth(input.healthChecks);
@@ -460,11 +461,11 @@ function buildSteps(input: {
       ]
         .filter(Boolean)
         .join("；"),
-      action: "生产环境开启 ADMIN_DASHBOARD_ENABLED，并配置至少 32 字符 ADMIN_ACCESS_TOKEN；验证无 token 时后台返回 404。",
+      action: "生产环境开启 ADMIN_DASHBOARD_ENABLED，配置至少 32 字符 ADMIN_ACCESS_TOKEN，并用 db:seed 初始化管理员邮箱角色；验证无 token 时后台返回 404。",
       evidence:
         evidenceRecordLabel(adminSecurityEvidence) ??
-        "无 token 访问 /admin 返回 404；带 token 可访问 /admin/health。",
-      envKeys: ["ADMIN_DASHBOARD_ENABLED", "ADMIN_ACCESS_TOKEN"],
+        "无 token 访问 /admin 返回 404；管理员邮箱登录或带 token 可访问 /admin/health。",
+      envKeys: ["ADMIN_DASHBOARD_ENABLED", "ADMIN_ACCESS_TOKEN", "ADMIN_EMAIL"],
       routes: ["/admin", "/admin/health"],
     },
     {
@@ -501,11 +502,11 @@ function buildSteps(input: {
       detail: callbackDetail(requiredCallbacks),
       action:
         requiredCallbackStatus === "ready"
-          ? "把支付宝、微信支付、七牛 CORS、协议和隐私链接同步到对应平台。"
-          : "先让 APP_URL 成为正式 HTTPS，再检查支付宝/微信支付通知、七牛 CORS、用户协议和隐私政策链接。",
+          ? "把 Google OAuth、支付宝、微信支付、七牛 CORS、协议和隐私链接同步到对应平台。"
+          : "先让 APP_URL 成为正式 HTTPS，再检查 Google OAuth、支付宝/微信支付通知、七牛 CORS、用户协议和隐私政策链接。",
       evidence:
         evidenceRecordLabel(publicCallbacksEvidence) ??
-        "第三方平台回调配置截图；协议链接和通知地址均使用正式 APP_URL。",
+        "第三方平台回调配置截图；登录回调、协议链接和通知地址均使用正式 APP_URL。",
       envKeys: ["APP_URL", "QINIU_PUBLIC_DOMAIN"],
       routes: requiredCallbacks.map((item) => item.value),
       commands: ["npm run launch:url-check"],
