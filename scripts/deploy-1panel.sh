@@ -43,7 +43,7 @@ backup_postgres() {
 
   sudo mkdir -p "${DB_BACKUP_DIR}"
   sudo chown "$(id -u):$(id -g)" "${DB_BACKUP_DIR}"
-  compose exec -T postgres sh -lc 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' \
+  compose exec -T postgres sh -lc 'pg_dump -h 127.0.0.1 -U "$POSTGRES_USER" "$POSTGRES_DB"' \
     | gzip > "${DB_BACKUP_DIR}/${backup_name}"
   find "${DB_BACKUP_DIR}" -type f -name 'predeploy-*.sql.gz' -mtime +30 -delete
   echo "PostgreSQL backup written to ${DB_BACKUP_DIR}/${backup_name}"
@@ -73,7 +73,7 @@ if [ ! -f ".env.production.local" ]; then
 fi
 
 compose --profile tools build ai-fortune ai-fortune-tools
-compose up -d postgres redis
+compose up -d --wait postgres redis
 
 if [ "${RUN_PRISMA_MIGRATE}" != "false" ]; then
   backup_postgres
