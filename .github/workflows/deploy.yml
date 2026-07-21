@@ -1,0 +1,70 @@
+name: Deploy to 1Panel
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      APP_DIR: ${{ vars.APP_DIR }}
+      BRANCH: main
+      HEALTHCHECK_URL: ${{ vars.HEALTHCHECK_URL }}
+      REPO_URL: https://github.com/1781194749/ai-fortune.git
+      RUN_PRISMA_PUSH: ${{ vars.RUN_PRISMA_PUSH }}
+      SERVER_PORT: ${{ secrets.SERVER_PORT }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure SSH
+        shell: bash
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+
+          : "${SERVER_HOST:?Missing SERVER_HOST secret}"
+          : "${SSH_PRIVATE_KEY:?Missing SSH_PRIVATE_KEY secret}"
+
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "${SSH_PRIVATE_KEY}" > ~/.ssh/ai_fortune_deploy_key
+          chmod 600 ~/.ssh/ai_fortune_deploy_key
+          ssh-keyscan -p "${SERVER_PORT:-22}" -H "${SERVER_HOST}" >> ~/.ssh/known_hosts
+
+      - name: Deploy
+        shell: bash
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+        run: |
+          set -euo pipefail
+
+          : "${SERVER_HOST:?Missing SERVER_HOST secret}"
+          : "${SERVER_USER:?Missing SERVER_USER secret}"
+
+          ssh -i ~/.ssh/ai_fortune_deploy_key \
+            -p "${SERVER_PORT:-22}" \
+            -o IdentitiesOnly=yes \
+            "${SERVER_USER}@${SERVER_HOST}" \
+            "APP_DIR='${APP_DIR:-/opt/apps/ai-fortune}' REPO_URL='${REPO_URL}' BRANCH='${BRANCH}' RUN_PRISMA_PUSH='${RUN_PRISMA_PUSH:-true}' bash -s" \
+            < scripts/deploy-1panel.sh
+
+      - name: Public health check
+        if: ${{ vars.HEALTHCHECK_URL != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 8 --retry-delay 5 "${HEALTHCHECK_URL}" > /dev/null

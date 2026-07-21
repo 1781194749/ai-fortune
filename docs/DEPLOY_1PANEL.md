@@ -61,15 +61,30 @@ npm run launch:secrets
 
 编排文件选择项目里的 `docker-compose.prod.yml`。如果 1Panel 需要手动填写内容，直接复制该文件内容即可。
 
-启动后，应用容器会监听服务器 `3000` 端口。腾讯云安全组不需要对公网开放 `3000`，只开放 `80`、`443` 和 1Panel 管理端口。
+启动后，应用容器会监听服务器 `3000` 端口，并在同一编排里运行 PostgreSQL 与 Redis。腾讯云安全组不需要对公网开放 `3000`、`5432` 或 `6379`，只开放 `80`、`443` 和 1Panel 管理端口。
+
+如果想在生产环境变量里覆盖端口（例如 `AI_FORTUNE_PORT=3001`），启动命令需要带上 `--env-file .env.production.local`，否则 Docker Compose 只会用默认的 `3000`：
+
+```bash
+docker compose --env-file .env.production.local -f docker-compose.prod.yml up -d --build --remove-orphans
+```
+
+如果使用编排自带 PostgreSQL，环境变量示例：
+
+```env
+POSTGRES_USER="postgres"
+POSTGRES_PASSWORD="<strong-postgres-password>"
+POSTGRES_DB="xuanji_ai"
+DATABASE_URL="postgresql://postgres:<strong-postgres-password>@postgres:5432/xuanji_ai?schema=public"
+```
 
 ## 4. 初始化数据库
 
 首次部署或 schema 变更后，在服务器项目目录运行：
 
 ```bash
-docker compose -f docker-compose.prod.yml --profile tools run --rm ai-fortune-tools npm run prisma:push
-docker compose -f docker-compose.prod.yml --profile tools run --rm ai-fortune-tools npm run launch:db-check
+docker compose --env-file .env.production.local -f docker-compose.prod.yml --profile tools run --rm ai-fortune-tools npm run prisma:push
+docker compose --env-file .env.production.local -f docker-compose.prod.yml --profile tools run --rm ai-fortune-tools npm run launch:db-check
 ```
 
 正式上线后建议逐步切换到 Prisma migration 流程，避免数据库结构变更缺少可审计记录。
@@ -109,9 +124,40 @@ http://ai-fortune:3000
 容器启动并绑定 HTTPS 域名后运行：
 
 ```bash
-docker compose -f docker-compose.prod.yml --profile tools run --rm ai-fortune-tools npm run launch:url-check
-docker compose -f docker-compose.prod.yml --profile tools run --rm ai-fortune-tools npm run launch:preflight
-docker compose -f docker-compose.prod.yml --profile tools run --rm ai-fortune-tools npm run launch:production-gate
+docker compose --env-file .env.production.local -f docker-compose.prod.yml --profile tools run --rm ai-fortune-tools npm run launch:url-check
+docker compose --env-file .env.production.local -f docker-compose.prod.yml --profile tools run --rm ai-fortune-tools npm run launch:preflight
+docker compose --env-file .env.production.local -f docker-compose.prod.yml --profile tools run --rm ai-fortune-tools npm run launch:production-gate
 ```
 
 `launch:production-gate` 没有 blocking 后，再进入真实支付灰度和正式放量。
+
+## 7. GitHub Actions 自动部署
+
+仓库已经包含 `.github/workflows/deploy.yml` 和 `scripts/deploy-1panel.sh`。配置完成后，每次推送 `main` 都会自动 SSH 到服务器，拉取最新代码并执行：
+
+```bash
+docker compose --env-file .env.production.local -f docker-compose.prod.yml --profile tools build ai-fortune ai-fortune-tools
+docker compose --env-file .env.production.local -f docker-compose.prod.yml --profile tools run --rm ai-fortune-tools npm run prisma:push
+docker compose --env-file .env.production.local -f docker-compose.prod.yml up -d --remove-orphans
+```
+
+需要在 GitHub 仓库配置以下 Secrets：
+
+```text
+SERVER_HOST=120.53.234.90
+SERVER_USER=<ssh-user>
+SSH_PRIVATE_KEY=<private-key-with-access-to-server>
+SERVER_PORT=22
+```
+
+可选配置 GitHub Variables：
+
+```text
+APP_DIR=/opt/apps/ai-fortune
+HEALTHCHECK_URL=https://xuanji.click/
+RUN_PRISMA_PUSH=true
+```
+
+`RUN_PRISMA_PUSH` 默认为 `true`，部署时会在启动容器前执行 `npm run prisma:push`。以后切到严格 migration 流程后，可以把它设为 `false`，改用 migration 命令。
+
+服务器上需要提前准备好 `${APP_DIR}/.env.production.local`。首次部署时，如果 `${APP_DIR}` 不存在，脚本会自动从 `https://github.com/1781194749/ai-fortune.git` 克隆 `main` 分支。
