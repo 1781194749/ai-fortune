@@ -77,11 +77,11 @@ compose up -d --wait postgres redis
 
 if [ "${RUN_PRISMA_MIGRATE}" != "false" ]; then
   backup_postgres
-  compose --profile tools run -T --rm ai-fortune-tools npm run prisma:migrate:deploy
+  compose --profile tools run -T --interactive=false --rm ai-fortune-tools npm run prisma:migrate:deploy
 fi
 
 if [ "${RUN_DB_SEED}" != "false" ]; then
-  compose --profile tools run -T --rm ai-fortune-tools npm run db:seed
+  compose --profile tools run -T --interactive=false --rm ai-fortune-tools npm run db:seed
 fi
 
 compose up -d --remove-orphans
