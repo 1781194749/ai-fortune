@@ -34,6 +34,17 @@ services:
       retries: 10
       start_period: 5s
 
+  google-proxy:
+    image: metacubex/mihomo:latest
+    container_name: ai-fortune-google-proxy
+    restart: unless-stopped
+    command: ["-f", "/config.yaml"]
+    volumes:
+      - "${GOOGLE_PROXY_CONFIG_PATH:-/opt/apps/ai-fortune-proxy/config.yaml}:/config.yaml:ro"
+      - google_proxy_data:/root/.config/mihomo
+    ports:
+      - "127.0.0.1:${GOOGLE_PROXY_HOST_PORT:-7890}:7890"
+
   ai-fortune:
     build:
       context: .
@@ -50,6 +61,9 @@ services:
       PORT: "3000"
       NEXT_TELEMETRY_DISABLED: "1"
       REDIS_URL: redis://redis:6379
+      HTTP_PROXY: "${HTTP_PROXY:-http://google-proxy:7890}"
+      HTTPS_PROXY: "${HTTPS_PROXY:-http://google-proxy:7890}"
+      NO_PROXY: "${NO_PROXY:-127.0.0.1,localhost,postgres,redis,ai-fortune,google-proxy}"
     ports:
       - "127.0.0.1:${AI_FORTUNE_PORT:-3000}:3000"
     depends_on:
@@ -57,6 +71,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      google-proxy:
+        condition: service_started
     healthcheck:
       test:
         [
@@ -119,3 +135,4 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  google_proxy_data:

@@ -44,6 +44,9 @@ Authorized JavaScript origin: https://<your-domain>
 Authorized redirect URI: https://<your-domain>/api/auth/google/callback
 ```
 
+生产服务器会通过 `google-proxy` 访问 Google OAuth；节点配置放在服务器本地
+`/opt/apps/ai-fortune-proxy/config.yaml`，不要把 VPN 订阅链接、节点密码或生成后的代理配置提交到 Git。
+
 当前线上域名分工：
 
 ```text
