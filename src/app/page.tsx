@@ -19,7 +19,7 @@ import { brand } from "@/lib/site";
 const trustPoints = ["档案仅用于个性化推演", "工具过程可见", "结果可继续追问"] as const;
 
 export default async function Home() {
-  const legalEntity = getLegalEntity();
+  const { icpRecordNo } = getLegalEntity();
   const session = await getSession();
   const startHref = session ? "/chat" : createLoginHref("/chat");
   const startLabel = "开始问事";
@@ -149,8 +149,8 @@ export default async function Home() {
         <footer className="relative mx-auto mt-24 flex w-full max-w-[1280px] flex-col gap-5 border-t border-[#24251f] py-8 text-xs text-[#777168] sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="font-ritual text-sm text-[#aaa294]">{brand.cn} / {brand.en}</p>
-            {legalEntity.companyName || legalEntity.icpRecordNo ? (
-              <p className="mt-1">{[legalEntity.companyName, legalEntity.icpRecordNo].filter(Boolean).join(" · ")}</p>
+            {icpRecordNo ? (
+              <p className="mt-1">{icpRecordNo}</p>
             ) : null}
           </div>
           <div className="flex flex-wrap gap-x-5 gap-y-2">

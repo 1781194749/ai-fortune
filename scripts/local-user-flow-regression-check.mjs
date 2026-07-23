@@ -199,6 +199,18 @@ const testSource = String.raw`
     delete process.env.INVITE_CODE_SECRET;
   });
 
+  await check("公开页面隐藏备案主体姓名并仅展示备案号", () => {
+    const publicPageSources = [
+      readFileSync(path.join(process.cwd(), "src/app/page.tsx"), "utf8"),
+      readFileSync(path.join(process.cwd(), "src/app/legal/[slug]/page.tsx"), "utf8"),
+    ];
+
+    for (const source of publicPageSources) {
+      assert.doesNotMatch(source, /legalEntity\.companyName|运营主体：/);
+      assert.match(source, /icpRecordNo/);
+    }
+  });
+
   await check("公开报告脱敏个人问题与档案字段", () => {
     const report = {
       id: "report-flow",

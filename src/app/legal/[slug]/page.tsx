@@ -17,7 +17,7 @@ export default async function LegalPage({
 }) {
   const { slug } = await params;
   const document = getLegalDocument(slug);
-  const legalEntity = getLegalEntity();
+  const { icpRecordNo } = getLegalEntity();
 
   if (!document) {
     notFound();
@@ -55,18 +55,11 @@ export default async function LegalPage({
           {document.summary}
         </p>
 
-        {(legalEntity.companyName || legalEntity.icpRecordNo) ? (
-          <div className="mt-4 grid gap-3 rounded-md border border-[#2f261a] bg-[#080705] p-4 text-sm leading-7 text-[#b9ad99] sm:grid-cols-2">
-            {legalEntity.companyName ? (
-              <p>
-                运营主体：<span className="text-[#d8cab2]">{legalEntity.companyName}</span>
-              </p>
-            ) : null}
-            {legalEntity.icpRecordNo ? (
-              <p>
-                ICP 备案号：<span className="text-[#d8cab2]">{legalEntity.icpRecordNo}</span>
-              </p>
-            ) : null}
+        {icpRecordNo ? (
+          <div className="mt-4 rounded-md border border-[#2f261a] bg-[#080705] p-4 text-sm leading-7 text-[#b9ad99]">
+            <p>
+              ICP 备案号：<span className="text-[#d8cab2]">{icpRecordNo}</span>
+            </p>
           </div>
         ) : null}
 
