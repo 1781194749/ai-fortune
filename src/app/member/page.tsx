@@ -76,7 +76,7 @@ export default async function MemberOverviewPage() {
         <MetricCard
           label="陪伴状态"
           value={companionState?.theme ? "跟进中" : canUseCompanion ? "待开启" : "未开启"}
-          detail={companionState?.theme?.title ?? (canUseCompanion ? "设置 30 天核心主题" : "¥99 方案解锁主题陪伴")}
+          detail={companionState?.theme?.title ?? (canUseCompanion ? "设置 30 天核心主题" : "年度会员（¥399/年）解锁主题陪伴")}
           icon={Route}
         />
         <MetricCard
@@ -128,7 +128,7 @@ export default async function MemberOverviewPage() {
                 ? `${companionState.availability.weekly.message} ${companionState.reviews.length} 份阶段记录已沉淀。`
                 : canUseCompanion
                   ? "你的会员已包含此能力，现在可以直接开启。"
-                  : "¥99 深度陪伴会员专属：每周复盘，30 天后生成阶段总结。"}
+                  : "年度会员（¥399/年）专属：每周复盘，30 天后生成阶段总结。"}
             </span>
           </span>
         </div>

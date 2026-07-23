@@ -15,6 +15,7 @@ import { getSession } from "@/lib/session";
 import { brand } from "@/lib/site";
 import { ReportAutoRefresh } from "./report-auto-refresh";
 import { ReportShareControl } from "./share-control";
+import { ReportMarkdown } from "@/app/_components/report-markdown";
 
 function statusMeta(status: string) {
   if (status === "GENERATING") {
@@ -157,9 +158,7 @@ export default async function ReportDetailPage({
           </div>
         )}
 
-        <div className="mt-6 whitespace-pre-line text-sm leading-8 text-[#d8cab2]">
-          {report.content}
-        </div>
+        <div className="mt-6"><ReportMarkdown content={report.content} /></div>
 
         <details className="mt-8 rounded-md border border-[#2f261a] bg-[#080705] p-4">
           <summary className="cursor-pointer text-sm font-semibold text-[#f0d49a]">

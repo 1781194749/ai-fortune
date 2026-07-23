@@ -177,7 +177,14 @@ export function BaziClient({
     const response = await fetch("/api/fortune/bazi", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, gender, birthDate, birthTime, birthPlace }),
+      body: JSON.stringify({
+        name,
+        gender,
+        birthDate,
+        birthTime,
+        birthPlace,
+        calendarType,
+      }),
     });
     const data = (await response.json()) as
       | ({ ok: true } & BaziResult)
@@ -223,11 +230,11 @@ export function BaziClient({
             />
           </label>
           <label className="block">
-            <span className="text-sm text-[#d8cab2]">性别</span>
+            <span className="text-sm text-[#d8cab2]">性别（选填）</span>
             <input
               value={gender}
               onChange={(event) => setGender(event.target.value)}
-              placeholder="可不填"
+              placeholder="不填时按男命顺逆规则暂排"
               className="mt-2 h-12 w-full rounded-md border border-[#3a3023] bg-[#080705] px-4 text-[#fff7e8] outline-none transition placeholder:text-[#6f6455] focus:border-[#c8a15a]"
             />
           </label>

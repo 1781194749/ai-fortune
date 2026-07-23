@@ -19,14 +19,17 @@ const uploadHosts: Record<string, string> = {
 };
 
 function safeBase64(value: string | Buffer) {
-  return Buffer.from(value).toString("base64url");
+  return Buffer.from(value)
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_");
 }
 
 function sanitizeFilename(filename: string) {
   return filename.replace(/[^\w.\-\u4e00-\u9fa5]/g, "_").slice(0, 80) || "palm.jpg";
 }
 
-function getPublicUrl(key: string) {
+export function getQiniuPublicUrl(key: string) {
   const domain = process.env.QINIU_PUBLIC_DOMAIN?.replace(/\/$/, "");
 
   if (!domain) {
@@ -34,6 +37,26 @@ function getPublicUrl(key: string) {
   }
 
   return `${domain}/${key}`;
+}
+
+export function isQiniuPublicDomainSecure(
+  env: Record<string, string | undefined> = process.env,
+) {
+  const domain = env.QINIU_PUBLIC_DOMAIN?.trim();
+
+  if (!domain) {
+    return false;
+  }
+
+  try {
+    return new URL(domain).protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+export function isPalmImageKeyOwnedByUser(input: { key: string; userId: string }) {
+  return input.key.startsWith(`palm/${input.userId}/`);
 }
 
 export function getQiniuUploadHost(region = process.env.QINIU_REGION) {
@@ -73,14 +96,16 @@ export function createQiniuUploadToken(input: QiniuUploadTokenRequest) {
       '{"key":"$(key)","hash":"$(etag)","fsize":$(fsize),"mimeType":"$(mimeType)"}',
   };
   const encodedPolicy = safeBase64(JSON.stringify(policy));
-  const encodedSign = createHmac("sha1", secretKey).update(encodedPolicy).digest("base64url");
+  const encodedSign = safeBase64(
+    createHmac("sha1", secretKey).update(encodedPolicy).digest(),
+  );
 
   return {
     mode: "qiniu" as const,
     key,
     token: `${accessKey}:${encodedSign}:${encodedPolicy}`,
     uploadUrl: getQiniuUploadHost(),
-    publicUrl: getPublicUrl(key),
+    publicUrl: getQiniuPublicUrl(key),
     expiresAt: new Date(deadline * 1000).toISOString(),
   };
 }

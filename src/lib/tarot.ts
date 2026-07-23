@@ -272,8 +272,16 @@ export function buildTarotReading(input: {
   const summary = `围绕「${focus}」，本次使用「${definition.title}」，抽到：${input.cards
     .map((card) => `${card.position}「${card.card}」${card.orientation}`)
     .join("、")}。`;
+  const decisionCards = input.spread === "decision" ? input.cards.slice(0, 2) : [];
+  const decisionRecommendation =
+    decisionCards.length === 2
+      ? decisionCards[0].orientation !== decisionCards[1].orientation
+        ? `二选一倾向：${decisionCards[0].orientation === "正位" ? "A" : "B"} 更适合先验证。牌面倾向只用于当前比较，不替代现实信息。`
+        : "二选一倾向：两项信号接近，暂不建议仓促拍板；先补充一个可验证条件再决定。"
+      : "";
   const content = [
     summary,
+    decisionRecommendation,
     buildSynthesis(input.cards, topic),
     ...input.cards.map(cardLine),
     "边界提醒：塔罗适合做自我观察、关系复盘和行动校准，不应替代医疗、法律、投资或重大现实决策中的专业意见。",
@@ -285,6 +293,7 @@ export function buildTarotReading(input: {
     topic,
     topicLabel: topicLabels[topic],
     summary,
+    recommendation: decisionRecommendation,
     content,
   };
 }

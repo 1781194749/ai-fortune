@@ -6,6 +6,7 @@ import { createLoginHref } from "@/lib/return-to";
 import { getSession } from "@/lib/session";
 import { brand } from "@/lib/site";
 import { PrintActions } from "./print-actions";
+import { ReportMarkdown } from "@/app/_components/report-markdown";
 
 function reportTypeLabel(type: string) {
   if (type === "BAZI_WUXING") {
@@ -33,6 +34,7 @@ function reportTypeLabel(type: string) {
 
 function formatDateTime(value: string) {
   return new Intl.DateTimeFormat("zh-CN", {
+    timeZone: "Asia/Shanghai",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -120,9 +122,7 @@ export default async function ReportExportPage({
 
         <section className="mt-8">
           <h2 className="font-ritual text-2xl text-[#17120b]">正文</h2>
-          <div className="mt-4 whitespace-pre-line text-base leading-9 text-[#30291f]">
-            {report.content}
-          </div>
+          <div className="mt-4"><ReportMarkdown content={report.content} variant="light" /></div>
         </section>
 
         <footer className="mt-10 border-t border-[#d7c8a6] pt-5 text-xs leading-6 text-[#6f6555]">

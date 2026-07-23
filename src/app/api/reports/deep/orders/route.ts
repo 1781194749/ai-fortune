@@ -1,4 +1,8 @@
 import { isDeepReportProductCode } from "@/lib/deep-report";
+import {
+  DeepReportRequirementsError,
+  getDeepReportRequirementsErrorResponse,
+} from "@/lib/deep-report-readiness";
 import { createMockOrder, getOrderDisplay } from "@/lib/mock-payment-store";
 import { settleOptionalSideEffects } from "@/lib/optional-side-effects";
 import { quotePromotion, recordPromotionEvent } from "@/lib/promo-code";
@@ -67,6 +71,12 @@ export async function POST(request: Request) {
       checkoutUrl: `/checkout/mock/${order.id}`,
     });
   } catch (error) {
+    if (error instanceof DeepReportRequirementsError) {
+      return Response.json(getDeepReportRequirementsErrorResponse(error), {
+        status: error.status,
+      });
+    }
+
     if (isDatabaseUnavailableError(error)) {
       return Response.json(
         { ok: false, code: error.code, message: error.message },

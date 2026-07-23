@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Copy, Loader2, Share2, ShieldOff } from "lucide-react";
 
@@ -29,6 +30,7 @@ export function ReportShareControl({
   reportId: string;
   initialShareSlug?: string;
 }) {
+  const router = useRouter();
   const [shareSlug, setShareSlug] = useState(initialShareSlug ?? "");
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState(
@@ -56,6 +58,7 @@ export function ReportShareControl({
 
     setShareSlug(data.report.shareSlug ?? "");
     setMessage(data.sharePath ? "公开分享已开启。" : "公开分享已关闭。");
+    router.refresh();
   }
 
   async function copyLink() {

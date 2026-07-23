@@ -16,6 +16,7 @@ import {
   type DeepReportGenerationInputSnapshot,
   type DeepReportProductCode,
 } from "@/lib/deep-report";
+import { assertDeepReportReady } from "@/lib/deep-report-readiness";
 import { enqueueDeepReportJob } from "@/lib/deep-report-queue";
 import {
   refundMemberEntitlement,
@@ -911,6 +912,10 @@ export async function processDeepReportJob(input: {
   }
 
   try {
+    await assertDeepReportReady({
+      userId: job.userId,
+      productCode: job.productCode,
+    });
     const draft = await buildPaidDeepReport({
       userId: job.userId,
       productCode: job.productCode,
@@ -935,7 +940,6 @@ export async function processDeepReportJob(input: {
           toolResults: toJsonValue(draft.toolResults),
           modelUsed: draft.modelUsed,
           costTokens: draft.costTokens,
-          shareSlug: `xj-${randomUUID().replace(/-/g, "").slice(0, 14)}`,
         },
       });
       await tx.deepReportJob.updateMany({

@@ -2,6 +2,8 @@ import { checkEntitlement, getResolvedStarCost } from "@/lib/entitlements";
 import { spendStars } from "@/lib/mock-payment-store";
 import { createMockReport } from "@/lib/report-store";
 import { buildBaziReading, calculateBazi, type BaziInput } from "@/lib/bazi";
+import { normalizeBirthCalendarType } from "@/lib/birth-calendar";
+import { mergeFortuneProfileFromBaziInput } from "@/lib/fortune-profile-store";
 import { createSession, getSession } from "@/lib/session";
 
 export async function POST(request: Request) {
@@ -11,7 +13,10 @@ export async function POST(request: Request) {
     return Response.json({ ok: false, message: "请先登录。" }, { status: 401 });
   }
 
-  const body = (await request.json().catch(() => null)) as Partial<BaziInput> | null;
+  const body = (await request.json().catch(() => null)) as
+    | (Partial<BaziInput> & { calendarType?: string })
+    | null;
+  const calendarType = normalizeBirthCalendarType(body?.calendarType);
   const input: BaziInput = {
     name: body?.name?.trim(),
     gender: body?.gender?.trim(),
@@ -44,6 +49,11 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
+
+  await mergeFortuneProfileFromBaziInput(session.userId, {
+    ...input,
+    calendarType,
+  });
 
   const reading = buildBaziReading(chart);
   const cost = getResolvedStarCost("bazi_brief");

@@ -81,7 +81,10 @@ if (!globalThis.xuanjiFortuneProfiles) {
 const localProfileStorePath = join(process.cwd(), ".data", "fortune-profiles.json");
 
 function canUseLocalProfileStore() {
-  return process.env.NODE_ENV !== "production";
+  return (
+    process.env.NODE_ENV !== "production" &&
+    process.env.XUANJI_DISABLE_LOCAL_PROFILE_PERSISTENCE !== "1"
+  );
 }
 
 function requireProfileDatabaseRead() {
@@ -283,7 +286,7 @@ function buildDerivedProfile(input: {
   let wuxingProfile: unknown = null;
   let zodiac: string | null = null;
 
-  if (input.calendarType === "solar" && input.birthDate && input.birthTime) {
+  if (input.calendarType !== "yinli" && input.birthDate && input.birthTime) {
     try {
       const chart = calculateBazi({
         name: input.name ?? undefined,
@@ -298,9 +301,16 @@ function buildDerivedProfile(input: {
         lunar: chart.lunar,
         bazi: chart.bazi,
         pillars: chart.pillars,
+        weightedCounts: chart.weightedCounts,
+        dayMaster: chart.dayMaster,
+        tenGodCounts: chart.tenGodCounts,
+        branchRelations: chart.branchRelations,
+        luck: chart.luck,
+        auxiliary: chart.auxiliary,
       };
       wuxingProfile = {
         counts: chart.counts,
+        weightedCounts: chart.weightedCounts,
         strongest: chart.strongest,
         weakest: chart.weakest,
       };
@@ -509,6 +519,25 @@ export async function upsertFortuneProfile(userId: string, input: FortuneProfile
   fortuneProfiles.set(userId, completed);
   await persistLocalProfiles();
   return completed;
+}
+
+export async function mergeFortuneProfileFromBaziInput(
+  userId: string,
+  input: FortuneProfileInput,
+) {
+  const current = await getFortuneProfile(userId);
+
+  return upsertFortuneProfile(userId, {
+    name: input.name ?? current?.name,
+    gender: input.gender ?? current?.gender,
+    birthDate: input.birthDate ?? current?.birthDate,
+    birthTime: input.birthTime ?? current?.birthTime,
+    birthPlace: input.birthPlace ?? current?.birthPlace,
+    calendarType: input.calendarType ?? current?.calendarType ?? "solar",
+    relationshipStatus: current?.relationshipStatus,
+    careerFocus: current?.careerFocus,
+    recurringTopics: current?.recurringTopics ?? [],
+  });
 }
 
 export function hasSavedFortuneProfile(profile: FortuneProfileRecord | null) {

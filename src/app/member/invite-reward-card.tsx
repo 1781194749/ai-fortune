@@ -16,6 +16,7 @@ function formatTime(value: string) {
   }
 
   return date.toLocaleString("zh-CN", {
+    timeZone: "Asia/Shanghai",
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
@@ -69,7 +70,7 @@ export function InviteRewardCard({ summary }: { summary: InviteRewardSummary }) 
               {copied ? "已复制" : "复制"}
             </button>
           </div>
-          <p className="mt-2 truncate font-mono text-[11px] text-[#697386]">邀请码 {summary.code}</p>
+          <p className="mt-2 font-mono text-[11px] text-[#697386]">邀请码 {summary.displayCode}</p>
         </div>
 
         <div className="grid gap-3 sm:grid-cols-3">

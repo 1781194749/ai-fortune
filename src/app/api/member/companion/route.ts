@@ -28,7 +28,7 @@ async function getAuthorizedSession() {
   if (!hasMemberCompanionAccess(session.tier)) {
     return {
       response: Response.json(
-        { ok: false, message: "关键阶段陪伴仅对 99 元深度陪伴会员开放。" },
+        { ok: false, message: "关键阶段陪伴仅对年度会员（¥399/年）开放。" },
         { status: 403 },
       ),
       session: null,

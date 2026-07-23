@@ -1,6 +1,10 @@
 import {
   isDeepReportProductCode,
 } from "@/lib/deep-report";
+import {
+  DeepReportRequirementsError,
+  getDeepReportRequirementsErrorResponse,
+} from "@/lib/deep-report-readiness";
 import { createDeepReportForPaidOrder } from "@/lib/deep-report-job";
 import { getMockOrder, getOrderDisplay } from "@/lib/mock-payment-store";
 import { isDatabaseUnavailableError } from "@/lib/prisma";
@@ -59,6 +63,12 @@ export async function POST(
       { status: result.queued ? 202 : 200 },
     );
   } catch (error) {
+    if (error instanceof DeepReportRequirementsError) {
+      return Response.json(getDeepReportRequirementsErrorResponse(error), {
+        status: error.status,
+      });
+    }
+
     if (isDatabaseUnavailableError(error)) {
       return Response.json(
         { ok: false, code: error.code, message: error.message },

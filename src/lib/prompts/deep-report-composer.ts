@@ -242,7 +242,16 @@ export function renderDeepReportAnswer(answer: DeepReportAnswer, evidence: Readi
     lines.push(`## ${section.title}`);
     for (const evidenceId of section.evidenceRefs) {
       const item = findReadingEvidenceItem(evidence, evidenceId);
-      if (item) lines.push(`- 证据：${item.label}：${item.summary}`);
+      if (item) {
+        const summaryAlreadyLabeled =
+          item.summary.startsWith(`${item.label}：`) || item.summary.startsWith(`${item.label}:`);
+        const evidenceText = !item.summary
+          ? item.label
+          : summaryAlreadyLabeled
+            ? item.summary
+            : `${item.label}：${item.summary}`;
+        lines.push(`- 证据：${evidenceText}`);
+      }
     }
     lines.push(...section.insights);
   }

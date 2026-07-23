@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { type ClipboardEvent, useEffect, useState } from "react";
 import {
   BadgeCheck,
   Camera,
@@ -22,7 +23,7 @@ type UploadToken = {
   expiresAt: string;
 };
 
-type PalmImage = {
+export type PalmImage = {
   id: string;
   qiniuKey: string;
   url: string;
@@ -64,21 +65,26 @@ async function readJson<T>(response: Response) {
 export function PalmClient({
   initialBalance,
   initialPalmQuota,
+  initialImage,
 }: {
   initialBalance: number;
   initialPalmQuota: number;
+  initialImage: PalmImage | null;
 }) {
+  const router = useRouter();
   const [balance, setBalance] = useState(initialBalance);
   const [palmQuota, setPalmQuota] = useState(initialPalmQuota);
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState("");
   const [focus, setFocus] = useState("看看我最近的状态和关系节奏");
-  const [image, setImage] = useState<PalmImage | null>(null);
+  const [image, setImage] = useState<PalmImage | null>(initialImage);
   const [result, setResult] = useState<PalmResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [consent, setConsent] = useState(false);
   const [message, setMessage] = useState(
-    initialPalmQuota > 0
+    initialImage
+      ? "已载入最近保存的图片档案，可以继续分析或删除。"
+      : initialPalmQuota > 0
       ? `优先使用会员手相额度，当前剩余 ${initialPalmQuota} 次。`
       : `手相简析消耗 ${getStarCostLabel("palm_reading")}。`,
   );
@@ -90,6 +96,45 @@ export function PalmClient({
       }
     };
   }, [previewUrl]);
+
+  function selectPalmFile(nextFile: File | null) {
+    if (nextFile && !["image/jpeg", "image/png", "image/webp"].includes(nextFile.type)) {
+      setMessage("请使用 JPG、PNG 或 WebP 图片。");
+      return;
+    }
+
+    if (nextFile && nextFile.size > 8 * 1024 * 1024) {
+      setMessage("图片大小需在 8MB 以内。");
+      return;
+    }
+
+    if (previewUrl) {
+      URL.revokeObjectURL(previewUrl);
+    }
+
+    setFile(nextFile);
+    setPreviewUrl(nextFile ? URL.createObjectURL(nextFile) : "");
+    setImage(null);
+    setResult(null);
+
+    if (nextFile) {
+      setMessage(`已选择 ${nextFile.name || "粘贴的图片"}，请确认授权后保存。`);
+    }
+  }
+
+  function pastePalmImage(event: ClipboardEvent<HTMLButtonElement>) {
+    const clipboardImage = Array.from(event.clipboardData.items)
+      .find((item) => item.kind === "file" && item.type.startsWith("image/"))
+      ?.getAsFile();
+
+    if (!clipboardImage) {
+      setMessage("剪贴板里没有可用的图片，请先复制一张手掌图片。");
+      return;
+    }
+
+    event.preventDefault();
+    selectPalmFile(clipboardImage);
+  }
 
   async function uploadImage() {
     if (!file) {
@@ -165,6 +210,7 @@ export function PalmClient({
 
       setImage(imageData.image);
       setMessage("图片已安全保存，可以开始分析。");
+      router.refresh();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "上传失败。");
     } finally {
@@ -197,10 +243,12 @@ export function PalmClient({
         setMessage(
           `本次使用 1 次会员手相额度，剩余 ${data.entitlement.remainingAfter} 次；星力保持 ${data.balanceAfter}。`,
         );
+        router.refresh();
         return;
       }
 
       setMessage(`本次消耗 ${data.cost} 星力，剩余 ${data.balanceAfter} 星力。`);
+      router.refresh();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "手相简析失败。");
     } finally {
@@ -225,6 +273,7 @@ export function PalmClient({
       setImage(null);
       setResult(null);
       setMessage("图片档案已删除。");
+      router.refresh();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "删除失败。");
     } finally {
@@ -257,20 +306,20 @@ export function PalmClient({
             type="file"
             accept="image/jpeg,image/png,image/webp"
             onChange={(event) => {
-              const nextFile = event.target.files?.[0] ?? null;
-
-              if (previewUrl) {
-                URL.revokeObjectURL(previewUrl);
-              }
-
-              setFile(nextFile);
-              setPreviewUrl(nextFile ? URL.createObjectURL(nextFile) : "");
-              setImage(null);
-              setResult(null);
+              selectPalmFile(event.target.files?.[0] ?? null);
             }}
             className="mt-2 block w-full rounded-md border border-[#3a3023] bg-[#080705] px-4 py-3 text-sm text-[#d8cab2] file:mr-4 file:rounded-md file:border-0 file:bg-[#c8a15a] file:px-3 file:py-2 file:font-semibold file:text-[#130f09]"
           />
         </label>
+
+        <button
+          type="button"
+          onPaste={pastePalmImage}
+          onClick={() => setMessage("已准备接收图片，请按 Command+V（Windows 按 Ctrl+V）粘贴。")}
+          className="mt-3 w-full rounded-md border border-dashed border-[#6a5431] bg-[#080705] px-4 py-3 text-left text-sm leading-6 text-[#d8cab2] transition hover:border-[#c8a15a] focus:border-[#c8a15a] focus:outline-none"
+        >
+          也可以点击这里，再按 Command+V（Windows 按 Ctrl+V）粘贴手掌图片
+        </button>
 
         <label className="mt-5 block">
           <span className="text-sm text-[#d8cab2]">关注主题</span>

@@ -9,6 +9,10 @@ import { getRuntimeProduct } from "@/lib/product-config";
 import { isDatabaseUnavailableError } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { MembershipDowngradeError } from "@/lib/membership-lifecycle";
+import {
+  DeepReportRequirementsError,
+  getDeepReportRequirementsErrorResponse,
+} from "@/lib/deep-report-readiness";
 import { settleOptionalSideEffects } from "@/lib/optional-side-effects";
 import { recordShareAttributionConversion } from "@/lib/share-attribution";
 
@@ -62,6 +66,12 @@ export async function POST(request: Request) {
         product,
       });
     } catch (error) {
+      if (error instanceof DeepReportRequirementsError) {
+        return Response.json(getDeepReportRequirementsErrorResponse(error), {
+          status: error.status,
+        });
+      }
+
       if (error instanceof MembershipDowngradeError) {
         return Response.json(
           {
@@ -114,6 +124,12 @@ export async function POST(request: Request) {
       checkoutUrl: `/checkout/mock/${order.id}`,
     });
   } catch (error) {
+    if (error instanceof DeepReportRequirementsError) {
+      return Response.json(getDeepReportRequirementsErrorResponse(error), {
+        status: error.status,
+      });
+    }
+
     if (isDatabaseUnavailableError(error)) {
       return Response.json(
         { ok: false, code: error.code, message: error.message },

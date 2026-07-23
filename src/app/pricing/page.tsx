@@ -314,7 +314,7 @@ export default async function PricingPage({
           <div className="mx-auto max-w-3xl text-center">
             <p className="text-xs tracking-[0.26em] text-[#c9a35f]">MEMBERSHIP PLANS</p>
             <h2 className="mt-4 font-ritual text-4xl tracking-[-0.03em] sm:text-5xl">免费轻问，月度陪伴，关键阶段跟进</h2>
-            <p className="mt-5 text-sm leading-7 text-[#8f887b] sm:text-base">天是轻入口，周是复盘点，月是陪伴期。99 元方案会围绕一个重要主题持续跟进 30 天。</p>
+            <p className="mt-5 text-sm leading-7 text-[#8f887b] sm:text-base">天是轻入口，周是复盘点，年度会员（¥399/年）会围绕一个重要主题持续跟进 30 天。</p>
           </div>
 
           {selectedPlan ? (
@@ -327,7 +327,7 @@ export default async function PricingPage({
                   </p>
                   <h3 className="mt-2 font-ritual text-2xl text-[#f4efe5]">已带回你的购买意图：{selectedPlan.name}</h3>
                   <p className="mt-2 text-sm leading-6 text-[#aaa294]">
-                    确认权益无误后即可继续下单；99 元方案还会开放独立的关键阶段陪伴管理页。
+                    确认权益无误后即可继续下单；年度会员还会开放独立的关键阶段陪伴管理页。
                   </p>
                   <Link
                     href={`#plan-${selectedPlan.code}`}
@@ -414,14 +414,14 @@ export default async function PricingPage({
                 ? "当前等级不可购买"
                 : isRenewal
                   ? product.code === "yearly"
-                    ? "续费 30 天陪伴"
+                    ? "续费年度会员"
                     : `续费${product.name}`
                   : session && session.tier !== "FREE"
                     ? product.code === "yearly"
-                      ? "升级到 30 天深度陪伴"
+                      ? "升级到年度会员"
                       : `升级到${product.name}`
                     : product.code === "yearly"
-                      ? "开启 30 天深度陪伴"
+                      ? "开启年度会员"
                       : `开通${product.name}`;
 
               return (

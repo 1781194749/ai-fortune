@@ -7,6 +7,7 @@ import { createLoginHref } from "@/lib/return-to";
 import { resolveShareTrackingSource, recordShareEvent } from "@/lib/share-tracking";
 import { brand } from "@/lib/site";
 import { PosterCanvas } from "./poster-canvas";
+import { getPublicReportView } from "@/lib/report-public-view";
 
 function reportTypeLabel(type: string) {
   if (type === "BAZI_WUXING") {
@@ -55,10 +56,11 @@ export async function generateMetadata({
       title: `${brand.cn} 报告海报`,
     };
   }
+  const publicReport = getPublicReportView(report);
 
   return {
-    title: `${report.title}海报 - ${brand.cn}`,
-    description: report.summary,
+    title: `${publicReport.title}海报 - ${brand.cn}`,
+    description: publicReport.summary,
   };
 }
 
@@ -81,6 +83,7 @@ export default async function SharedReportPosterPage({
   if (!report || report.status !== "COMPLETED") {
     notFound();
   }
+  const publicReport = getPublicReportView(report);
 
   await recordShareEvent({
     shareSlug,
@@ -118,10 +121,10 @@ export default async function SharedReportPosterPage({
           brandCn: brand.cn,
           brandEn: brand.en,
           tagline: brand.tagline,
-          title: report.title,
+          title: publicReport.title,
           typeLabel: reportTypeLabel(report.type),
-          summary: report.summary,
-          excerpt: excerpt(report.content, 280),
+          summary: publicReport.summary,
+          excerpt: excerpt(publicReport.content, 280),
           sharePath,
           qrPath,
           shareSlug,

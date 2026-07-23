@@ -7,9 +7,12 @@ import {
 } from "@/lib/commerce";
 import {
   buildProfileMemory,
-  getFortuneProfile,
   type FortuneProfileRecord,
 } from "@/lib/fortune-profile-store";
+import {
+  assertDeepReportReady,
+  type DeepReportPalmEvidence,
+} from "@/lib/deep-report-readiness";
 import { buildAiCostMetadata, estimateOpenAiCostCents } from "@/lib/ai-cost";
 import { getOpenAIClient, getPremiumOpenAIModel } from "@/lib/openai-client";
 import type { MockReportType } from "@/lib/report-store";
@@ -57,6 +60,7 @@ export type DeepReportGenerationInputSnapshot = {
   paymentSource?: "membership_quota";
   entitlementKind?: "deep_report";
   profile: FortuneProfileRecord | null;
+  palmEvidence?: DeepReportPalmEvidence;
   profileMemory: string;
   localDraft: {
     type: MockReportType;
@@ -175,13 +179,14 @@ function buildLocalDeepReport(input: {
   productCode: DeepReportProductCode;
   profile: FortuneProfileRecord | null;
   profileMemory: string;
+  palmEvidence?: DeepReportPalmEvidence;
 }) {
   const product = getProduct(input.productCode);
   const reportType = getDeepReportType(input.productCode);
   const { chart, wuxing } = readBazi(input.profile);
-  const baziText = chart?.bazi?.length ? chart.bazi.join("、") : "档案尚未形成完整四柱";
-  const weakestText = wuxing?.weakest?.length ? wuxing.weakest.join("、") : "待补充";
-  const strongestText = wuxing?.strongest ?? "待补充";
+  const baziText = chart?.bazi?.join("、") ?? "";
+  const weakestText = wuxing?.weakest?.join("、") ?? "";
+  const strongestText = wuxing?.strongest ?? "";
   const name = input.profile?.name || "你";
   const title =
     input.productCode === "yearly_report"
@@ -210,7 +215,7 @@ function buildLocalDeepReport(input: {
     "2. 把接下来 30 天拆成一个可执行的小周期，记录情绪、机会和阻力。",
     "3. 遇到重大医疗、法律、投资或人生选择时，以专业意见和现实证据为准。",
     input.productCode === "composite_report"
-      ? "当前生成输入如果没有经过手相视觉工具验证，本报告只保留八字与档案部分，并明确标记手相资料缺口，不补造掌纹细节。"
+      ? `手相分析摘要：${input.palmEvidence?.summary ?? ""}`
       : "",
     "",
     "本报告仅供娱乐、文化参考和自我探索，不构成医疗、投资、法律或重大人生决策建议。",
@@ -225,6 +230,7 @@ function buildLocalDeepReport(input: {
       analyzer: "local_deep_report_v1",
       bazi: chart,
       wuxing,
+      palmEvidence: input.palmEvidence,
       profileCompleteness: input.profile?.completeness ?? 0,
     },
   };
@@ -243,12 +249,17 @@ export async function createDeepReportGenerationInputSnapshot(input: {
     entitlementKind: "deep_report";
   };
 }) {
-  const profile = await getFortuneProfile(input.userId);
+  const readiness = await assertDeepReportReady({
+    userId: input.userId,
+    productCode: input.productCode,
+  });
+  const profile = readiness.profile;
   const profileMemory = buildProfileMemory(profile);
   const local = buildLocalDeepReport({
     productCode: input.productCode,
     profile,
     profileMemory,
+    palmEvidence: readiness.palmEvidence,
   });
   const product = getProduct(input.productCode);
 
@@ -260,6 +271,7 @@ export async function createDeepReportGenerationInputSnapshot(input: {
     orderId: input.orderId,
     ...input.entitlement,
     profile,
+    palmEvidence: readiness.palmEvidence,
     profileMemory,
     localDraft: local,
     profileId: profile?.id,

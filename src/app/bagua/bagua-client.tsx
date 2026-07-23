@@ -57,6 +57,7 @@ type BaguaChart = {
   mutualHexagram: Hexagram;
   oppositeHexagram: Hexagram;
   reversedHexagram: Hexagram;
+  choiceDirection?: string;
 };
 
 type BaguaReport = {
@@ -267,6 +268,12 @@ export function BaguaClient({ initialBalance }: { initialBalance: number }) {
                 <p className="mt-3 text-sm leading-7 text-[#d8cab2]">{result.chart.mainHexagram.relationAdvice}</p>
               </article>
             </div>
+
+            {result.chart.choiceDirection ? (
+              <div className="rounded-lg border border-[#c8a15a]/35 bg-[#c8a15a]/8 p-4 text-sm leading-7 text-[#f0d49a]">
+                {result.chart.choiceDirection}
+              </div>
+            ) : null}
 
             <div className="grid gap-3 md:grid-cols-3">
               {[

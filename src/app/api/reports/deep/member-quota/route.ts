@@ -1,5 +1,9 @@
 import { isDeepReportProductCode } from "@/lib/deep-report";
 import {
+  DeepReportRequirementsError,
+  getDeepReportRequirementsErrorResponse,
+} from "@/lib/deep-report-readiness";
+import {
   createDeepReportWithMemberQuota,
   InsufficientDeepReportEntitlementError,
 } from "@/lib/deep-report-job";
@@ -67,6 +71,12 @@ export async function POST(request: Request) {
       { status: 202 },
     );
   } catch (error) {
+    if (error instanceof DeepReportRequirementsError) {
+      return Response.json(getDeepReportRequirementsErrorResponse(error), {
+        status: error.status,
+      });
+    }
+
     if (isDatabaseUnavailableError(error)) {
       return Response.json(
         { ok: false, code: error.code, message: error.message },

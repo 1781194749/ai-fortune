@@ -82,7 +82,7 @@ const suggestedValues: Record<string, string> = {
   OPENAI_DEFAULT_MODEL: "gpt-5.4",
   OPENAI_FAST_MODEL: "gpt-5.4",
   OPENAI_PREMIUM_MODEL: "gpt-5.5",
-  OPENAI_VISION_MODEL: "gpt-5.4",
+  OPENAI_VISION_MODEL: "gpt-5.5-openai-compact",
   PAYMENT_PROVIDER: "live",
   LIVE_PAYMENT_SMOKE_TEST_USER_IDS: "<comma-separated-internal-test-user-ids>",
   PAYMENT_CALLBACK_DEV_BYPASS: "false",

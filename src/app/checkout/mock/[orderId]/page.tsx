@@ -14,7 +14,7 @@ function statusLabel(status: string) {
   if (status === "PENDING") return "待确认";
   if (status === "REFUNDED") return "已退款";
   if (status === "CLOSED") return "已关闭";
-  return "处理中";
+  return "支付失败";
 }
 
 export default async function MockCheckoutPage({
@@ -31,12 +31,13 @@ export default async function MockCheckoutPage({
 
   const order = await getMockOrder(orderId);
 
-  if (!order || order.userId !== session.userId) {
+  if (!order || order.userId !== session.userId || order.provider !== "MOCK") {
     notFound();
   }
 
   const displayOrder = getOrderDisplay(order);
   const isDeepReportOrder = isDeepReportProductCode(displayOrder.productCode);
+  const checkoutTitle = isDeepReportOrder ? "确认报告订单" : "确认你的方案";
 
   return (
     <main className="relative min-h-screen overflow-hidden bg-[#080907] px-5 pb-14 text-[#f4efe5] sm:px-8">
@@ -61,16 +62,18 @@ export default async function MockCheckoutPage({
         <div>
           <div className="inline-flex items-center gap-2 rounded-full border border-[#30312b] bg-[#11120f]/75 px-3 py-1.5 text-xs text-[#aaa294]">
             <ShieldCheck size={14} className="text-[#79b8b1]" aria-hidden="true" />
-            权益与金额已为你保留
+            {isDeepReportOrder ? "报告与金额已为你保留" : "权益与金额已为你保留"}
           </div>
           <h1 className="mt-6 font-ritual text-5xl leading-tight tracking-[-0.04em] sm:text-6xl">
-            确认你的方案
+            {checkoutTitle}
           </h1>
           <p className="mt-5 max-w-xl text-sm leading-8 text-[#aaa294] sm:text-base">
-            核对商品与金额后完成开通。权益到账后，可在个人中心查看星力、报告和手相额度。
+            {isDeepReportOrder
+              ? "核对报告类型与金额后完成支付。支付成功后，你可以立即进入报告生成流程。"
+              : "核对商品与金额后完成开通。权益到账后，可在个人中心查看星力、报告和手相额度。"}
           </p>
           <div className="mt-7 space-y-3 text-xs text-[#777168]">
-            <p className="flex items-center gap-2"><BadgeCheck size={14} className="text-[#79b8b1]" />开通结果会自动同步到个人中心</p>
+            <p className="flex items-center gap-2"><BadgeCheck size={14} className="text-[#79b8b1]" />{isDeepReportOrder ? "支付结果会自动同步到报告中心" : "开通结果会自动同步到个人中心"}</p>
             <p className="flex items-center gap-2"><LockKeyhole size={14} className="text-[#79b8b1]" />订单仅与你当前登录的账号关联</p>
           </div>
         </div>
@@ -114,8 +117,20 @@ export default async function MockCheckoutPage({
                 >
                   {isDeepReportOrder ? "开始生成深度报告" : "查看已到账权益"}
                 </Link>
+              ) : displayOrder.status === "PENDING" ? (
+                <MockPayButton orderId={displayOrder.id} isDeepReport={isDeepReportOrder} />
               ) : (
-                <MockPayButton orderId={displayOrder.id} />
+                <div className="space-y-3">
+                  <p className="rounded-2xl border border-[#5d2b22] bg-[#5d2b22]/10 px-4 py-3 text-sm leading-6 text-[#e08b74]">
+                    该订单{statusLabel(displayOrder.status)}，不能再次确认支付。
+                  </p>
+                  <Link
+                    href={isDeepReportOrder ? "/reports/deep" : "/pricing#plans"}
+                    className="inline-flex h-12 w-full items-center justify-center rounded-full border border-[#c9a35f]/45 px-5 font-semibold text-[#efd9a6] transition hover:border-[#c9a35f]/70"
+                  >
+                    重新选择{isDeepReportOrder ? "报告" : "方案"}
+                  </Link>
+                </div>
               )}
             </div>
           </div>

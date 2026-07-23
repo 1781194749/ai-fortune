@@ -163,7 +163,7 @@ export const starCosts: Record<FeatureCode, { min: number; max: number }> = {
   chat_basic: { min: 1, max: 2 },
   tarot_daily: { min: 0, max: 0 },
   tarot_three_card: { min: 15, max: 15 },
-  tarot_love: { min: 30, max: 40 },
+  tarot_love: { min: 30, max: 30 },
   bagua_question: { min: 15, max: 15 },
   bazi_brief: { min: 20, max: 20 },
   palm_reading: { min: 30, max: 30 },

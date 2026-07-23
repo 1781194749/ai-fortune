@@ -276,7 +276,10 @@ function readAdminHealthContent(root) {
 
 
 function safeBase64(value) {
-  return Buffer.from(value).toString("base64url");
+  return Buffer.from(value)
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_");
 }
 
 function sanitizeFilename(filename) {
@@ -299,9 +302,11 @@ function createQiniuUploadToken(env) {
       '{"key":"$(key)","hash":"$(etag)","fsize":$(fsize),"mimeType":"$(mimeType)"}',
   };
   const encodedPolicy = safeBase64(JSON.stringify(policy));
-  const encodedSign = createHmac("sha1", value(env, "QINIU_SECRET_KEY"))
-    .update(encodedPolicy)
-    .digest("base64url");
+  const encodedSign = safeBase64(
+    createHmac("sha1", value(env, "QINIU_SECRET_KEY"))
+      .update(encodedPolicy)
+      .digest(),
+  );
   const publicDomain = normalizeBaseUrl(value(env, "QINIU_PUBLIC_DOMAIN"));
 
   return {

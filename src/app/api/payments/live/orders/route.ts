@@ -11,6 +11,10 @@ import { isDatabaseUnavailableError } from "@/lib/prisma";
 import { getRuntimeProduct } from "@/lib/product-config";
 import { getSession } from "@/lib/session";
 import { recordShareAttributionConversion } from "@/lib/share-attribution";
+import {
+  DeepReportRequirementsError,
+  getDeepReportRequirementsErrorResponse,
+} from "@/lib/deep-report-readiness";
 
 async function createLiveOrderResponse(request: Request) {
   const session = await getSession();
@@ -123,6 +127,12 @@ export async function POST(request: Request) {
   try {
     return await createLiveOrderResponse(request);
   } catch (error) {
+    if (error instanceof DeepReportRequirementsError) {
+      return Response.json(getDeepReportRequirementsErrorResponse(error), {
+        status: error.status,
+      });
+    }
+
     if (isDatabaseUnavailableError(error)) {
       return Response.json(
         { ok: false, code: error.code, message: error.message },

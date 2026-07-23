@@ -1,4 +1,7 @@
-import { createQiniuUploadToken } from "@/lib/qiniu";
+import {
+  createQiniuUploadToken,
+  isQiniuPublicDomainSecure,
+} from "@/lib/qiniu";
 import { getSession } from "@/lib/session";
 
 function isSupportedImage(contentType: string) {
@@ -30,6 +33,17 @@ export async function POST(request: Request) {
     return Response.json(
       { ok: false, message: "图片大小需在 8MB 以内。" },
       { status: 400 },
+    );
+  }
+
+  if (process.env.NODE_ENV === "production" && !isQiniuPublicDomainSecure()) {
+    return Response.json(
+      {
+        ok: false,
+        code: "IMAGE_STORAGE_UNAVAILABLE",
+        message: "图片服务暂未开放，请稍后再试。",
+      },
+      { status: 503 },
     );
   }
 

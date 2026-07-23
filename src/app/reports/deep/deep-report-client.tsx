@@ -24,6 +24,7 @@ type DeepOrder = {
   id: string;
   productCode: string;
   productName: string;
+  provider: string;
   priceLabel: string;
   discountLabel?: string;
   promotionLabel?: string;
@@ -49,6 +50,13 @@ type EntitlementBalance = {
   sourceOrders: number;
 };
 
+type MissingRequirement = {
+  code: string;
+  label: string;
+  message: string;
+  href: string;
+};
+
 type ApiResult =
   | {
       ok: true;
@@ -59,7 +67,13 @@ type ApiResult =
       queued?: boolean;
       entitlement?: EntitlementBalance;
     }
-  | { ok: false; message?: string; entitlement?: EntitlementBalance };
+  | {
+      ok: false;
+      message?: string;
+      entitlement?: EntitlementBalance;
+      requirements?: MissingRequirement[];
+      nextAction?: MissingRequirement;
+    };
 
 type ReportApiResult =
   | {
@@ -90,7 +104,23 @@ function statusLabel(status: string) {
     return "待支付";
   }
 
+  if (status === "CLOSED") {
+    return "已关闭";
+  }
+
+  if (status === "REFUNDED") {
+    return "已退款";
+  }
+
+  if (status === "FAILED") {
+    return "支付失败";
+  }
+
   return status;
+}
+
+function getNextAction(data: ApiResult) {
+  return data.ok ? null : data.nextAction ?? data.requirements?.[0] ?? null;
 }
 
 function formatOrderTime(value: string) {
@@ -101,6 +131,7 @@ function formatOrderTime(value: string) {
   }
 
   return date.toLocaleString("zh-CN", {
+    timeZone: "Asia/Shanghai",
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
@@ -157,6 +188,7 @@ export function DeepReportClient({
   const [promotionQuotes, setPromotionQuotes] = useState<
     Record<string, Extract<PromotionQuote, { ok: true }>>
   >({});
+  const [nextAction, setNextAction] = useState<MissingRequirement | null>(null);
   const [message, setMessage] = useState(
     highlightedOrderId ? "支付完成后可在下方生成深度报告。" : "选择一种报告，确认后即可开始。",
   );
@@ -293,6 +325,7 @@ export function DeepReportClient({
 
   async function createOrder(productCode: string) {
     setLoadingProduct(productCode);
+    setNextAction(null);
     setMessage("正在准备报告订单...");
 
     const response = await fetch("/api/reports/deep/orders", {
@@ -309,6 +342,7 @@ export function DeepReportClient({
 
     if (!response.ok || data.ok === false || !data.checkoutUrl) {
       setMessage(data.ok === false ? data.message ?? "订单创建失败。" : "订单创建失败。");
+      setNextAction(getNextAction(data));
       return;
     }
 
@@ -322,6 +356,7 @@ export function DeepReportClient({
     }
 
     setLoadingQuotaProduct(productCode);
+    setNextAction(null);
     setMessage("正在使用会员报告额度创建生成任务...");
 
     const response = await fetch("/api/reports/deep/member-quota", {
@@ -335,6 +370,7 @@ export function DeepReportClient({
 
     if (!response.ok || data.ok === false) {
       setMessage(data.ok === false ? data.message ?? "会员报告额度生成失败。" : "会员报告额度生成失败。");
+      setNextAction(getNextAction(data));
 
       if (data.entitlement) {
         setReportQuota(data.entitlement);
@@ -365,6 +401,7 @@ export function DeepReportClient({
 
   async function retryReport(reportId: string) {
     setRetryingReportId(reportId);
+    setNextAction(null);
     setMessage("正在重新派发深度报告生成任务...");
 
     const response = await fetch(`/api/reports/${reportId}/retry`, {
@@ -376,6 +413,7 @@ export function DeepReportClient({
 
     if (!response.ok || data.ok === false) {
       setMessage(data.ok === false ? data.message ?? "报告重试失败。" : "报告重试失败。");
+      setNextAction(getNextAction(data));
 
       if (data.entitlement) {
         setReportQuota(data.entitlement);
@@ -406,6 +444,7 @@ export function DeepReportClient({
 
   async function generateReport(orderId: string) {
     setGeneratingOrder(orderId);
+    setNextAction(null);
     setMessage("正在创建深度报告生成任务...");
 
     const response = await fetch(`/api/reports/deep/orders/${orderId}/generate`, {
@@ -417,6 +456,7 @@ export function DeepReportClient({
 
     if (!response.ok || data.ok === false) {
       setMessage(data.ok === false ? data.message ?? "报告生成失败。" : "报告生成失败。");
+      setNextAction(getNextAction(data));
       return;
     }
 
@@ -537,6 +577,23 @@ export function DeepReportClient({
                     应用
                   </button>
                 </div>
+                {promotionCodes[product.code] || promotionQuotes[product.code] ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPromotionCodes((current) => ({ ...current, [product.code]: "" }));
+                      setPromotionQuotes((current) => {
+                        const next = { ...current };
+                        delete next[product.code];
+                        return next;
+                      });
+                      setPromotionMessages((current) => ({ ...current, [product.code]: "" }));
+                    }}
+                    className="text-left text-xs text-[#d98572] underline underline-offset-4"
+                  >
+                    清除优惠码
+                  </button>
+                ) : null}
                 <p className="min-h-5 text-xs text-[#b9ad99]">
                   {promotionQuotes[product.code]
                     ? `${promotionQuotes[product.code].originalPriceLabel} ${promotionQuotes[product.code].discountLabel}`
@@ -587,9 +644,17 @@ export function DeepReportClient({
           <ScrollText className="text-[#c8a15a]" size={28} aria-hidden="true" />
         </div>
 
-        <p className="mt-4 rounded-md border border-[#2f261a] bg-[#080705] p-3 text-sm text-[#b9ad99]">
-          {message}
-        </p>
+        <div className="mt-4 rounded-md border border-[#2f261a] bg-[#080705] p-3 text-sm text-[#b9ad99]" aria-live="polite">
+          <p>{message}</p>
+          {nextAction ? (
+            <Link
+              href={nextAction.href}
+              className="mt-3 inline-flex h-9 items-center justify-center rounded-md bg-[#c8a15a] px-3 font-semibold text-[#130f09] transition hover:bg-[#f0d49a]"
+            >
+              {nextAction.label}
+            </Link>
+          ) : null}
+        </div>
 
         <div className="mt-5 space-y-3">
           {memberQuotaReports.map((report) => (
@@ -755,13 +820,21 @@ export function DeepReportClient({
                       )}
                       {generatingOrder === order.id ? "生成中..." : "生成深度报告"}
                     </button>
-                  ) : (
+                  ) : order.status === "PENDING" && order.provider === "MOCK" ? (
                     <Link
                       href={`/checkout/mock/${order.id}`}
                       className="mt-4 inline-flex h-10 w-full items-center justify-center rounded-md border border-[#6a5431] px-4 text-sm font-semibold text-[#fff7e8] transition hover:border-[#c8a15a]"
                     >
                       继续支付
                     </Link>
+                  ) : order.status === "PENDING" ? (
+                    <p className="mt-4 rounded-md border border-[#3a3023] bg-[#12100d] p-3 text-sm leading-6 text-[#b9ad99]">
+                      请在原支付渠道完成付款；如已付款，请稍后刷新查看支付结果。
+                    </p>
+                  ) : (
+                    <p className="mt-4 rounded-md border border-[#3a3023] bg-[#12100d] p-3 text-sm leading-6 text-[#8f887b]">
+                      该订单{statusLabel(order.status)}，如仍需要此报告，请在左侧重新购买。
+                    </p>
                   )}
                 </article>
               );

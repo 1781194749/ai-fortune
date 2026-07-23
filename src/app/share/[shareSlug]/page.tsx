@@ -8,6 +8,8 @@ import { resolveShareTrackingSource, recordShareEvent } from "@/lib/share-tracki
 import { brand } from "@/lib/site";
 import { AttributionTracker } from "./attribution-tracker";
 import { ShareActions } from "./share-actions";
+import { getPublicReportView } from "@/lib/report-public-view";
+import { ReportMarkdown } from "@/app/_components/report-markdown";
 
 function reportTypeLabel(type: string) {
   if (type === "BAZI_WUXING") {
@@ -47,13 +49,14 @@ export async function generateMetadata({
       description: brand.description,
     };
   }
+  const publicReport = getPublicReportView(report);
 
   return {
-    title: `${report.title} - ${brand.cn}`,
-    description: report.summary,
+    title: `${publicReport.title} - ${brand.cn}`,
+    description: publicReport.summary,
     openGraph: {
-      title: report.title,
-      description: report.summary,
+      title: publicReport.title,
+      description: publicReport.summary,
       type: "article",
     },
   };
@@ -78,6 +81,7 @@ export default async function SharedReportPage({
   if (!report || report.status !== "COMPLETED") {
     notFound();
   }
+  const publicReport = getPublicReportView(report);
 
   await recordShareEvent({
     shareSlug,
@@ -115,7 +119,7 @@ export default async function SharedReportPage({
             </span>
             <div>
               <p className="text-sm text-[#b9ad99]">{reportTypeLabel(report.type)}</p>
-              <h1 className="font-ritual text-4xl text-[#fff7e8]">{report.title}</h1>
+              <h1 className="font-ritual text-4xl text-[#fff7e8]">{publicReport.title}</h1>
             </div>
           </div>
           <div>
@@ -129,15 +133,13 @@ export default async function SharedReportPage({
           </div>
         </div>
 
-        <ShareActions shareSlug={shareSlug} title={report.title} summary={report.summary} />
+        <ShareActions shareSlug={shareSlug} title={publicReport.title} summary={publicReport.summary} />
 
         <p className="mt-6 rounded-md border border-[#2f261a] bg-[#080705] p-4 leading-7 text-[#d8cab2]">
-          {report.summary}
+          {publicReport.summary}
         </p>
 
-        <div className="mt-6 whitespace-pre-line text-sm leading-8 text-[#d8cab2]">
-          {report.content}
-        </div>
+        <div className="mt-6"><ReportMarkdown content={publicReport.content} /></div>
 
         <div className="mt-8 rounded-md border border-[#2f261a] bg-[#080705] p-4 text-sm leading-7 text-[#b9ad99]">
           本分享页仅展示报告正文，不包含用户原始输入、图片、工具原始结果或账户信息。内容仅供娱乐、文化参考和自我探索。

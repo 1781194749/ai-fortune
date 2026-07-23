@@ -43,6 +43,7 @@ import {
   type PromptValidationSummary,
   type ReadingEvidencePackage,
 } from "@/lib/prompts";
+import { getMemberCompanionState } from "@/lib/member-companion-store";
 
 export type ChatIntent = "tarot" | "bazi" | "bagua" | "palm" | "general";
 
@@ -1739,7 +1740,16 @@ export async function prepareAiChat(
     intent,
   });
   const profile = await getFortuneProfile(input.userId);
-  const profileMemory = buildReadingSubjectProfileMemory(profile, readingSubject);
+  const baseProfileMemory = buildReadingSubjectProfileMemory(profile, readingSubject);
+  const companionState = readingSubject.memberProfileRole === "subject"
+    ? await getMemberCompanionState(input.userId).catch(() => null)
+    : null;
+  const profileMemory = [
+    baseProfileMemory,
+    companionState?.theme
+      ? `当前 30 天陪伴主题：${companionState.theme.title}${companionState.theme.context ? `；背景：${companionState.theme.context}` : ""}。后续相关问题请优先沿用这个主题，不要把它当成一次性问事。`
+      : null,
+  ].filter(Boolean).join("\n");
   const profileProgress = readingSubject.memberProfileRole === "subject"
     ? {
         label: "档案已合参",
@@ -2114,13 +2124,18 @@ function buildChatConclusion(prepared: PreparedAiChat, structuredAnswer: Fortune
     profileReason,
     `本轮核心关注是「${prepared.compiledContext.coreConcern}」。`,
   ].slice(0, 3);
-  const risk = structuredAnswer.realityChecks[0] ?? {
+  const defaultRisk = {
     tarot: "把牌面当成绝对结果，忽略对方持续而真实的行动。",
     bazi: "用命盘替代现实信息，或在状态耗竭时强行推进。",
     bagua: "把当前时间窗口的卦象，当成不可逆的长期结论。",
     palm: "图片光线或掌纹清晰度不足，会让正式解读更保守。",
     general: "问题范围过大，导致建议无法被现实反馈验证。",
   }[prepared.intent];
+  const candidateRisk = structuredAnswer.realityChecks[0] ?? "";
+  const risk = /支持|机会|适合|优势|有利|推进|稳定|希望|成长/.test(candidateRisk) &&
+    !/风险|边界|成本|损耗|误解|压力|反复|失控|不确定|忽略|不可逆|暂停|止损/.test(candidateRisk)
+      ? defaultRisk
+      : candidateRisk || defaultRisk;
   const nextStep = structuredAnswer.actions[0]
     ? `${structuredAnswer.actions[0].label}：${structuredAnswer.actions[0].detail}`
     : {

@@ -101,6 +101,7 @@ function shortId(id: string) {
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("zh-CN", {
+    timeZone: "Asia/Shanghai",
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
@@ -530,12 +531,12 @@ export default async function AdminPage({
     persistenceReadiness,
   ] =
     await Promise.all([
-      getAdminUsers(),
-      getAdminOrders(),
-      getAdminWalletTransactions(),
-      getAdminEntitlementAccounts({ take: 50 }),
-      getAdminEntitlementTransactions({ take: 80 }),
-      getAdminReports(),
+      getAdminUsers({ take: 500 }),
+      getAdminOrders({ take: 500 }),
+      getAdminWalletTransactions({ take: 500 }),
+      getAdminEntitlementAccounts({ take: 500 }),
+      getAdminEntitlementTransactions({ take: 500 }),
+      getAdminReports({ take: 500 }),
       getAdminUsageLogs({ take: 500 }),
       getOperationalConfigStatus(),
       getChannelBudgetConfigMap(),

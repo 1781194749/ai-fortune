@@ -42,6 +42,7 @@ type TarotResult = {
   balanceAfter: number;
   report: TarotReport;
   cards: TarotCardResult[];
+  recommendation?: string;
 };
 
 const spreads = [
@@ -292,6 +293,11 @@ export function TarotClient({
               <div className="mt-4 whitespace-pre-line text-sm leading-8 text-[#d8cab2]">
                 {result.report.content}
               </div>
+              {spread === "decision" && result.recommendation ? (
+                <p className="mt-4 rounded-md border border-[#c8a15a]/35 bg-[#c8a15a]/8 p-3 text-sm leading-6 text-[#f0d49a]">
+                  {result.recommendation}
+                </p>
+              ) : null}
               <Link
                 href={`/reports/${result.report.id}`}
                 className="mt-5 inline-flex h-10 items-center justify-center rounded-md border border-[#6a5431] px-4 text-sm font-semibold text-[#fff7e8] transition hover:border-[#c8a15a]"

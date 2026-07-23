@@ -325,6 +325,20 @@ export function PurchaseButton({
               </button>
             </div>
 
+            {promotionCode || promotionQuote ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setPromotionCode("");
+                  setPromotionQuote(null);
+                  setPromotionMessage("");
+                }}
+                className="mt-3 text-xs text-[#d98572] underline underline-offset-4"
+              >
+                清除优惠码
+              </button>
+            ) : null}
+
             <p className={`mt-3 min-h-6 text-sm ${promotionQuote ? "text-[#79b8b1]" : "text-[#8f887b]"}`}>
               {promotionQuote ? (
                 <span className="inline-flex items-center gap-1.5"><Check size={13} aria-hidden="true" />{promotionMessage}</span>

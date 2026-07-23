@@ -110,7 +110,7 @@ function initials(value: string) {
 }
 
 function tierLabel(tier: string) {
-  if (tier === "YEARLY") return "深度陪伴会员";
+  if (tier === "YEARLY") return "年度会员";
   if (tier === "PRO" || tier === "PREMIUM") return "进阶会员";
   if (tier === "MONTHLY") return "月度会员";
   if (tier === "TRIAL") return "体验会员";

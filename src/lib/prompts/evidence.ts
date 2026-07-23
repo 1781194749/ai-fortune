@@ -215,8 +215,30 @@ function buildBaguaEvidence(tool: ToolLike, items: ReadingEvidenceItem[]) {
 function buildBaziEvidenceFromChart(chart: Record<string, unknown>, items: ReadingEvidenceItem[]) {
   const bazi = Array.isArray(chart.bazi) ? chart.bazi.map(String).slice(0, 4) : [];
   const pillars = Array.isArray(chart.pillars) ? chart.pillars : [];
-  const weightedCounts = isRecord(chart.weightedCounts) ? chart.weightedCounts : isRecord(chart.counts) ? chart.counts : {};
-  const dayMaster = isRecord(chart.dayMaster) ? chart.dayMaster : {};
+  const wuxingProfile = isRecord(chart.wuxingProfile) ? chart.wuxingProfile : {};
+  const weightedCounts = isRecord(chart.weightedCounts)
+    ? chart.weightedCounts
+    : isRecord(wuxingProfile.weightedCounts)
+      ? wuxingProfile.weightedCounts
+      : isRecord(chart.counts)
+        ? chart.counts
+        : isRecord(wuxingProfile.counts)
+          ? wuxingProfile.counts
+          : {};
+  const dayPillar = pillars.find(
+    (pillar) => isRecord(pillar) && (pillar.key === "day" || pillar.label === "日柱"),
+  );
+  const dayMaster = isRecord(chart.dayMaster)
+    ? chart.dayMaster
+    : isRecord(dayPillar)
+      ? {
+          stem: dayPillar.heavenlyStem,
+          element: dayPillar.stemElement,
+          yinYang: dayPillar.yinYang,
+          strengthLabel: "",
+          explanation: "",
+        }
+      : {};
   const luck = isRecord(chart.luck) ? chart.luck : {};
   const currentDaYun = isRecord(luck.currentDaYun) ? luck.currentDaYun : {};
 
@@ -256,10 +278,10 @@ function buildBaziEvidenceFromChart(chart: Record<string, unknown>, items: Readi
       .map((element) => `${element}:${asText(weightedCounts[element]) || "0"}`)
       .join(" / "),
     data: {
-      counts: chart.counts,
-      weightedCounts: chart.weightedCounts,
-      strongest: chart.strongest,
-      weakest: chart.weakest,
+      counts: isRecord(wuxingProfile.counts) ? wuxingProfile.counts : chart.counts,
+      weightedCounts,
+      strongest: chart.strongest ?? wuxingProfile.strongest,
+      weakest: chart.weakest ?? wuxingProfile.weakest,
     },
     allowedTerms: [
       "木",
@@ -267,8 +289,12 @@ function buildBaziEvidenceFromChart(chart: Record<string, unknown>, items: Readi
       "土",
       "金",
       "水",
-      chart.strongest,
-      ...(Array.isArray(chart.weakest) ? chart.weakest : []),
+      chart.strongest ?? wuxingProfile.strongest,
+      ...(Array.isArray(chart.weakest)
+        ? chart.weakest
+        : Array.isArray(wuxingProfile.weakest)
+          ? wuxingProfile.weakest
+          : []),
       ...Object.entries(weightedCounts).flatMap(([key, value]) => [`${key}:${value}`, `${key}：${value}`]),
     ],
   });

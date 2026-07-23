@@ -177,7 +177,7 @@ export function toDbReportStatus(status: MockReportStatus) {
 
 export async function createMockReport(input: CreateMockReportInput) {
   const status = input.status ?? "COMPLETED";
-  const shareSlug = input.shareSlug ?? (status === "COMPLETED" ? createShareSlug() : undefined);
+  const shareSlug = input.shareSlug;
 
   const dbResult = await tryPrisma(async (prisma) => {
     await ensureDbUser(prisma, { userId: input.userId });
@@ -231,8 +231,7 @@ export async function updateMockReport(input: UpdateMockReportInput) {
       return null;
     }
 
-    const shouldEnsureShareSlug =
-      input.ensureShareSlug ?? (input.status === "COMPLETED" && !report.shareSlug);
+    const shouldEnsureShareSlug = input.ensureShareSlug === true;
     const data = {
       ...(input.status ? { status: toDbReportStatus(input.status) } : {}),
       ...(input.title !== undefined ? { title: input.title } : {}),
@@ -270,8 +269,7 @@ export async function updateMockReport(input: UpdateMockReportInput) {
     return null;
   }
 
-  const shouldEnsureShareSlug =
-    input.ensureShareSlug ?? (input.status === "COMPLETED" && !report.shareSlug);
+  const shouldEnsureShareSlug = input.ensureShareSlug === true;
   const updated: MockReport = {
     ...report,
     ...(input.status ? { status: input.status } : {}),

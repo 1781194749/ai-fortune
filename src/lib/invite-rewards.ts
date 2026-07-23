@@ -1,7 +1,14 @@
 import "server-only";
 
-import { createHmac, timingSafeEqual } from "crypto";
+import {
+  createCipheriv,
+  createDecipheriv,
+  createHash,
+  createHmac,
+  timingSafeEqual,
+} from "crypto";
 import { cookies } from "next/headers";
+import { headers } from "next/headers";
 import { adjustMemberEntitlement } from "@/lib/entitlement-store";
 import { grantOperationalStars } from "@/lib/mock-payment-store";
 import {
@@ -9,6 +16,7 @@ import {
   getUsageLogsByFeature,
   type UsageLogRecord,
 } from "@/lib/usage-log-store";
+import { resolvePublicAppOrigin } from "@/lib/public-origin";
 
 export type InviteRewardRecord = {
   inviteeId: string;
@@ -20,6 +28,7 @@ export type InviteRewardRecord = {
 
 export type InviteRewardSummary = {
   code: string;
+  displayCode: string;
   invitePath: string;
   inviteUrl: string;
   inviterStarGrant: number;
@@ -56,7 +65,9 @@ type InviteRewardMetadata = {
 
 const inviteCookieName = "xuanji_invite_attr";
 const inviteCookieMaxAgeSeconds = 60 * 60 * 24 * 30;
-const inviteCodeVersion = "v1";
+const inviteCodeVersion = "v2";
+const legacyInviteCodeVersion = "v1";
+const inviteCodeAad = Buffer.from("xuanji-invite-code-v2", "utf8");
 const rewardFeature = "invite_reward";
 
 export const inviteRewardConfig = {
@@ -66,11 +77,17 @@ export const inviteRewardConfig = {
 } as const;
 
 function getInviteSecret() {
-  return (
-    process.env.INVITE_CODE_SECRET ||
-    process.env.AUTH_SESSION_SECRET ||
-    "xuanji-ai-local-invite-secret"
-  );
+  const secret = process.env.INVITE_CODE_SECRET || process.env.AUTH_SESSION_SECRET;
+
+  if (secret) {
+    return secret;
+  }
+
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("生产环境必须配置 INVITE_CODE_SECRET 或 AUTH_SESSION_SECRET。");
+  }
+
+  return "xuanji-ai-local-invite-secret";
 }
 
 function toBase64Url(value: string) {
@@ -81,11 +98,78 @@ function fromBase64Url(value: string) {
   return Buffer.from(value, "base64url").toString("utf8");
 }
 
-function signInviteUserId(userId: string) {
+function signLegacyInviteUserId(userId: string) {
   return createHmac("sha256", getInviteSecret())
-    .update(`${inviteCodeVersion}:${userId}`)
+    .update(`${legacyInviteCodeVersion}:${userId}`)
     .digest("base64url")
     .slice(0, 18);
+}
+
+function getInviteEncryptionKey() {
+  return createHash("sha256").update(getInviteSecret()).digest();
+}
+
+function getInviteIv(userId: string) {
+  return createHmac("sha256", getInviteSecret())
+    .update(`${inviteCodeVersion}:iv:${userId}`)
+    .digest()
+    .subarray(0, 12);
+}
+
+function encryptInviteUserId(userId: string) {
+  const iv = getInviteIv(userId);
+  const cipher = createCipheriv("aes-256-gcm", getInviteEncryptionKey(), iv);
+  cipher.setAAD(inviteCodeAad);
+  const encrypted = Buffer.concat([
+    cipher.update(userId, "utf8"),
+    cipher.final(),
+  ]);
+
+  return [
+    inviteCodeVersion,
+    iv.toString("base64url"),
+    encrypted.toString("base64url"),
+    cipher.getAuthTag().toString("base64url"),
+  ].join(".");
+}
+
+function decryptInviteUserId(code: string) {
+  const [version, ivValue, encryptedValue, tagValue, extra] = code.split(".");
+
+  if (
+    version !== inviteCodeVersion ||
+    !ivValue ||
+    !encryptedValue ||
+    !tagValue ||
+    extra
+  ) {
+    return null;
+  }
+
+  try {
+    const decipher = createDecipheriv(
+      "aes-256-gcm",
+      getInviteEncryptionKey(),
+      Buffer.from(ivValue, "base64url"),
+    );
+    decipher.setAAD(inviteCodeAad);
+    decipher.setAuthTag(Buffer.from(tagValue, "base64url"));
+
+    return Buffer.concat([
+      decipher.update(Buffer.from(encryptedValue, "base64url")),
+      decipher.final(),
+    ]).toString("utf8");
+  } catch {
+    return null;
+  }
+}
+
+function getInviteDisplayCode(userId: string) {
+  return createHmac("sha256", getInviteSecret())
+    .update(`${inviteCodeVersion}:display:${userId}`)
+    .digest("hex")
+    .slice(0, 8)
+    .toUpperCase();
 }
 
 function signaturesMatch(actual: string, expected: string) {
@@ -150,10 +234,6 @@ function decodeAttributionPayload(value: string | undefined) {
   }
 }
 
-function getAppUrl() {
-  return (process.env.APP_URL || "http://localhost:3000").replace(/\/$/, "");
-}
-
 function toInviteRewardMetadata(log: UsageLogRecord) {
   if (log.feature !== rewardFeature || !isRecord(log.metadata)) {
     return undefined;
@@ -209,16 +289,41 @@ async function hasRewardForInvitee(inviteeId: string) {
 }
 
 export function createInviteCode(userId: string) {
-  return `${inviteCodeVersion}_${toBase64Url(userId)}_${signInviteUserId(userId)}`;
+  return encryptInviteUserId(userId);
 }
 
 export function parseInviteCode(code: string | undefined) {
   const normalized = normalizeInviteCode(code);
-  const [version, encodedUserId, signature] = normalized.split("_");
+  const encryptedUserId = decryptInviteUserId(normalized);
 
-  if (version !== inviteCodeVersion || !encodedUserId || !signature) {
+  if (encryptedUserId) {
+    if (
+      encryptedUserId.length > 160 ||
+      /[\u0000-\u001F\u007F]/.test(encryptedUserId)
+    ) {
+      return null;
+    }
+
+    return {
+      code: normalized,
+      inviterId: encryptedUserId,
+    };
+  }
+
+  const legacyPrefix = `${legacyInviteCodeVersion}_`;
+  const legacySignatureLength = 18;
+  const signatureSeparatorIndex = normalized.length - legacySignatureLength - 1;
+
+  if (
+    !normalized.startsWith(legacyPrefix) ||
+    signatureSeparatorIndex <= legacyPrefix.length ||
+    normalized[signatureSeparatorIndex] !== "_"
+  ) {
     return null;
   }
+
+  const encodedUserId = normalized.slice(legacyPrefix.length, signatureSeparatorIndex);
+  const signature = normalized.slice(signatureSeparatorIndex + 1);
 
   try {
     const userId = fromBase64Url(encodedUserId);
@@ -227,7 +332,7 @@ export function parseInviteCode(code: string | undefined) {
       return null;
     }
 
-    const expected = signInviteUserId(userId);
+    const expected = signLegacyInviteUserId(userId);
 
     if (!signaturesMatch(signature, expected)) {
       return null;
@@ -242,14 +347,15 @@ export function parseInviteCode(code: string | undefined) {
   }
 }
 
-export function getInviteLinkForUser(userId: string) {
+export function getInviteLinkForUser(userId: string, appOrigin?: string) {
   const code = createInviteCode(userId);
   const invitePath = `/invite/${code}`;
 
   return {
     code,
+    displayCode: `XJ-${getInviteDisplayCode(userId)}`,
     invitePath,
-    inviteUrl: `${getAppUrl()}${invitePath}`,
+    inviteUrl: `${appOrigin ?? resolvePublicAppOrigin()}${invitePath}`,
   };
 }
 
@@ -406,7 +512,11 @@ export async function completeInviteRewardForLogin(input: {
 }
 
 export async function getInviteRewardSummary(userId: string) {
-  const link = getInviteLinkForUser(userId);
+  const requestHeaders = await headers();
+  const link = getInviteLinkForUser(
+    userId,
+    resolvePublicAppOrigin({ headers: requestHeaders }),
+  );
   const logs = await getUsageLogsByFeature(rewardFeature, { take: 5000 });
   const rewards = logs
     .map((log) => {

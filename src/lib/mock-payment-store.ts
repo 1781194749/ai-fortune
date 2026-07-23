@@ -16,6 +16,8 @@ import {
   type Product,
   type ProductCode,
 } from "@/lib/commerce";
+import { isDeepReportProductCode } from "@/lib/deep-report";
+import { assertDeepReportReady } from "@/lib/deep-report-readiness";
 import {
   activateMembershipForOrder,
   MembershipDowngradeError,
@@ -501,12 +503,57 @@ export async function createMockOrder(
   return createPaymentOrder(userId, productCode, "MOCK", input);
 }
 
+export async function closeMockOrder(input: { orderId: string; userId: string }) {
+  const dbResult = await tryPrisma(async (prisma) => {
+    const updated = await prisma.order.updateMany({
+      where: {
+        id: input.orderId,
+        userId: input.userId,
+        provider: PaymentProvider.MOCK,
+        status: OrderStatus.PENDING,
+      },
+      data: { status: OrderStatus.CLOSED },
+    });
+
+    if (updated.count === 0) {
+      return null;
+    }
+
+    const order = await prisma.order.findUnique({ where: { id: input.orderId } });
+    return order ? mapDbOrder(order) : null;
+  });
+
+  if (dbResult.ok) {
+    return dbResult.value;
+  }
+
+  requireCommerceDatabase();
+  const order = state.orders.get(input.orderId);
+
+  if (
+    !order ||
+    order.userId !== input.userId ||
+    order.provider !== "MOCK" ||
+    order.status !== "PENDING"
+  ) {
+    return null;
+  }
+
+  const closed = { ...order, status: "CLOSED" as const };
+  state.orders.set(order.id, closed);
+  return closed;
+}
+
 export async function createPaymentOrder(
   userId: string,
   productCode: ProductCode,
   provider: PaymentProviderCode,
   input: { promotion?: AppliedPromotion; product?: Product } = {},
 ) {
+  if (isDeepReportProductCode(productCode)) {
+    await assertDeepReportReady({ userId, productCode });
+  }
+
   const product = input.product ?? getProduct(productCode);
 
   if (!product) {
@@ -677,6 +724,10 @@ export async function markExternalPaymentOrderPaid(input: {
       transaction: null,
       balanceAfter: currentBalance,
     };
+  }
+
+  if (order.status !== "PENDING") {
+    return { ok: false as const, reason: "ORDER_NOT_PAYABLE" };
   }
 
   order.status = "PAID";
@@ -1155,6 +1206,10 @@ export async function completeMockOrder(orderId: string, session: SessionPayload
     return { ok: false as const, reason: "ORDER_FORBIDDEN" };
   }
 
+  if (order.provider !== "MOCK") {
+    return { ok: false as const, reason: "PROVIDER_MISMATCH" };
+  }
+
   const product = getProduct(order.productCode);
 
   if (!product) {
@@ -1168,12 +1223,25 @@ export async function completeMockOrder(orderId: string, session: SessionPayload
       productCode: order.productCode,
     });
 
+    const latestTransaction = state.walletTransactions
+      .filter((transaction) => transaction.userId === session.userId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+    const balanceAfter = latestTransaction?.balanceAfter ?? session.starBalance;
+
     return {
       ok: true as const,
       order,
-      nextSession: session,
+      nextSession: {
+        ...session,
+        tier: membershipTierByProduct[product.code] ?? session.tier,
+        starBalance: balanceAfter,
+      },
       transaction: null,
     };
+  }
+
+  if (order.status !== "PENDING") {
+    return { ok: false as const, reason: "ORDER_NOT_PAYABLE" };
   }
 
   order.status = "PAID";

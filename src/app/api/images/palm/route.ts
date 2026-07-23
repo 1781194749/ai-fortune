@@ -1,5 +1,6 @@
 import { createPalmImageUpload, getUserPalmImages } from "@/lib/image-upload-store";
 import { isDatabaseUnavailableError } from "@/lib/prisma";
+import { getQiniuPublicUrl, isPalmImageKeyOwnedByUser } from "@/lib/qiniu";
 import { getSession } from "@/lib/session";
 
 function isSupportedImage(contentType: string) {
@@ -54,9 +55,17 @@ export async function POST(request: Request) {
     const contentType = body?.contentType?.trim() ?? "";
     const sizeBytes = Number(body?.sizeBytes ?? 0);
     const key = body?.key?.trim() ?? "";
+    const imageUrl = body?.url?.trim() ?? "";
 
     if (!key) {
       return Response.json({ ok: false, message: "图片 key 缺失。" }, { status: 400 });
+    }
+
+    if (!isPalmImageKeyOwnedByUser({ key, userId: session.userId })) {
+      return Response.json(
+        { ok: false, message: "图片 key 与当前账号不匹配。" },
+        { status: 403 },
+      );
     }
 
     if (!isSupportedImage(contentType)) {
@@ -73,10 +82,19 @@ export async function POST(request: Request) {
       );
     }
 
+    const qiniuPublicUrl = body?.provider === "qiniu" ? getQiniuPublicUrl(key) : "";
+
+    if (process.env.NODE_ENV === "production" && !/^https:\/\//i.test(qiniuPublicUrl)) {
+      return Response.json(
+        { ok: false, message: "正式环境只接受已上传到对象存储的真实图片。" },
+        { status: 400 },
+      );
+    }
+
     const image = await createPalmImageUpload({
       userId: session.userId,
       qiniuKey: key,
-      url: body?.url?.trim() || `mock://${key}`,
+      url: qiniuPublicUrl || imageUrl || `mock://${key}`,
       contentType,
       sizeBytes,
       metadata: {

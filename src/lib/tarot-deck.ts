@@ -672,16 +672,46 @@ const minorArcana = minorSuits.flatMap((suit) =>
     rank: rank.rank,
     element: suit.element,
     keywords: [...rank.keywords, ...suit.keywords].slice(0, 6),
-    upright: `${rank.upright}${suit.uprightFocus}`,
-    reversed: `${rank.reversed}${suit.reversedFocus}`,
-    advice: `${rank.advice}${suit.advice}`,
+    upright:
+      suit.suit === "cups" && rank.rank === "seven"
+        ? "情感想象、选项过多或投射感增强，容易把期待当成事实。"
+        : suit.suit === "swords" && rank.rank === "three"
+          ? "失望、刺痛或难以回避的沟通浮现，需要先承认事实再修复。"
+          : `${rank.upright}${suit.uprightFocus}`,
+    reversed:
+      suit.suit === "cups" && rank.rank === "seven"
+        ? "幻想开始退潮，但仍要分辨真实感受与逃避。"
+        : suit.suit === "swords" && rank.rank === "three"
+          ? "伤口正在被看见，适合停止反复内耗并寻找修复方式。"
+          : `${rank.reversed}${suit.reversedFocus}`,
+    advice:
+      suit.suit === "cups" && rank.rank === "seven"
+        ? "把选项写成现实条件，只保留一个最值得验证的方向。"
+        : suit.suit === "swords" && rank.rank === "three"
+          ? "先把事实和感受分开写清楚，再决定是否沟通或退出。"
+          : `${rank.advice}${suit.advice}`,
     contexts: {
-      general: `${rank.context}${suit.contexts.general}`,
-      love: `${rank.context}${suit.contexts.love}`,
+      general:
+        suit.suit === "cups" && rank.rank === "seven"
+          ? "重点是分辨情感投射、想象和真实回应。"
+          : suit.suit === "swords" && rank.rank === "three"
+            ? "重点是承认失望、厘清沟通事实并设置修复边界。"
+            : `${rank.context}${suit.contexts.general}`,
+      love:
+        suit.suit === "cups" && rank.rank === "seven"
+          ? "关系里容易出现理想化或选项过多，先看持续回应而非想象。"
+          : suit.suit === "swords" && rank.rank === "three"
+            ? "关系里有失望或刺痛的沟通议题，先确认事实再决定修复方式。"
+            : `${rank.context}${suit.contexts.love}`,
       career: `${rank.context}${suit.contexts.career}`,
       wealth: `${rank.context}${suit.contexts.wealth}`,
       wellbeing: `${rank.context}${suit.contexts.wellbeing}`,
-      decision: `${rank.context}${suit.contexts.decision}`,
+      decision:
+        suit.suit === "cups" && rank.rank === "seven"
+          ? "优先选择事实更清楚、能减少投射的一项。"
+          : suit.suit === "swords" && rank.rank === "three"
+            ? "优先选择能正面处理事实、降低持续损耗的一项。"
+            : `${rank.context}${suit.contexts.decision}`,
     },
     visual: {
       code: rank.code,

@@ -3,30 +3,35 @@
 import { useState } from "react";
 import { BadgeCheck, Loader2 } from "lucide-react";
 
-export function MockPayButton({ orderId }: { orderId: string }) {
+export function MockPayButton({ orderId, isDeepReport = false }: { orderId: string; isDeepReport?: boolean }) {
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState("确认后，会员权益会立即发放到当前账号。");
+  const [message, setMessage] = useState(isDeepReport ? "确认后即可进入报告生成流程。" : "确认后，会员权益会立即发放到当前账号。");
 
   async function pay() {
     setLoading(true);
-    setMessage("正在确认订单并发放权益...");
+    setMessage(isDeepReport ? "正在确认订单..." : "正在确认订单并发放权益...");
 
-    const response = await fetch(`/api/payments/mock/orders/${orderId}/pay`, {
-      method: "POST",
-    });
-    const data = (await response.json()) as {
-      ok: boolean;
-      message?: string;
-      redirectTo?: string;
-    };
+    try {
+      const response = await fetch(`/api/payments/mock/orders/${orderId}/pay`, {
+        method: "POST",
+      });
+      const data = (await response.json().catch(() => null)) as {
+        ok?: boolean;
+        message?: string;
+        redirectTo?: string;
+      } | null;
 
-    if (!response.ok || !data.ok) {
+      if (!response.ok || !data?.ok) {
+        setMessage(data?.message ?? "支付失败，请稍后重试。");
+        return;
+      }
+
+      window.location.href = data.redirectTo ?? "/member";
+    } catch {
+      setMessage("网络连接异常，请稍后重试。");
+    } finally {
       setLoading(false);
-      setMessage(data.message ?? "支付失败，请稍后重试。");
-      return;
     }
-
-    window.location.href = data.redirectTo ?? "/member";
   }
 
   return (
@@ -42,7 +47,7 @@ export function MockPayButton({ orderId }: { orderId: string }) {
         ) : (
           <BadgeCheck size={18} aria-hidden="true" />
         )}
-        {loading ? "正在开通..." : "确认开通"}
+        {loading ? (isDeepReport ? "正在确认..." : "正在开通...") : (isDeepReport ? "确认支付" : "确认开通")}
       </button>
       <p className="text-center text-xs leading-5 text-[#777168]">{message}</p>
     </div>

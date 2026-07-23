@@ -6,6 +6,7 @@ import {
 } from "@/lib/mock-payment-store";
 import { formatTime, getOrderStatusLabel, getRequiredMemberSession } from "../member-data";
 import { PageHeader, Panel } from "../member-ui";
+import { RecordOrderActions } from "./record-order-actions";
 
 export default async function MemberRecordsPage() {
   const session = await getRequiredMemberSession();
@@ -33,6 +34,7 @@ export default async function MemberRecordsPage() {
                   <th className="px-5 py-3 font-medium">金额</th>
                   <th className="px-5 py-3 font-medium">状态</th>
                   <th className="px-5 py-3 font-medium">时间</th>
+                  <th className="px-5 py-3 font-medium">操作</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#20252d]">
@@ -43,11 +45,18 @@ export default async function MemberRecordsPage() {
                       <td className="px-5 py-4 text-[#d8b873]">{order.priceLabel}</td>
                       <td className="px-5 py-4">{getOrderStatusLabel(order.status)}</td>
                       <td className="px-5 py-4 text-[#8d98a8]">{formatTime(order.createdAt)}</td>
+                      <td className="px-5 py-4">
+                        {order.status === "PENDING" && order.provider === "MOCK" ? (
+                          <RecordOrderActions orderId={order.id} />
+                        ) : order.status === "PENDING" ? (
+                          <span className="text-xs text-[#8d98a8]">等待支付渠道结果</span>
+                        ) : "—"}
+                      </td>
                     </tr>
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={4} className="px-5 py-10 text-center text-sm text-[#697386]">暂无订单记录</td>
+                    <td colSpan={5} className="px-5 py-10 text-center text-sm text-[#697386]">暂无订单记录</td>
                   </tr>
                 )}
               </tbody>

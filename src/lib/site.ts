@@ -79,7 +79,7 @@ export const pricingPlans = [
     price: "399",
     unit: "年",
     highlight: false,
-    features: ["每月 450 星力", "年度运势", "每月主题报告", "全年档案"],
+    features: ["全年 5400 星力", "年度运势", "12 份主题报告额度", "全年档案"],
   },
 ] as const;
 

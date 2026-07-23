@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { Camera } from "lucide-react";
 import { ToolPageShell } from "@/app/_components/tool-page-shell";
+import { getUserPalmImages } from "@/lib/image-upload-store";
 import { getMemberEntitlementSummary } from "@/lib/member-entitlements";
 import { getUserMockOrders } from "@/lib/mock-payment-store";
 import { getUserMockReports } from "@/lib/report-store";
@@ -15,9 +16,10 @@ export default async function PalmPage() {
     redirect(createLoginHref("/palm"));
   }
 
-  const [orders, reports] = await Promise.all([
+  const [orders, reports, images] = await Promise.all([
     getUserMockOrders(session.userId),
     getUserMockReports(session.userId),
+    getUserPalmImages(session.userId),
   ]);
   const entitlementSummary = await getMemberEntitlementSummary({
     userId: session.userId,
@@ -37,6 +39,7 @@ export default async function PalmPage() {
       <PalmClient
         initialBalance={session.starBalance}
         initialPalmQuota={entitlementSummary.palmQuota.remaining}
+        initialImage={images[0] ?? null}
       />
     </ToolPageShell>
   );

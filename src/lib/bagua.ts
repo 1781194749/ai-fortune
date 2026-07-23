@@ -244,6 +244,14 @@ function getHexagram(upper: Trigram, lower: Trigram) {
 }
 
 function detectTopic(question: string): BaguaTopic {
+  if (
+    /二选一|选择|选哪(?:个|一个)?|哪个更|哪一个更|要不要|是否|还是|决策|该不该|能不能/i.test(
+      question,
+    )
+  ) {
+    return "选择";
+  }
+
   if (/感情|关系|复合|对方|婚|恋|喜欢/.test(question)) {
     return "关系";
   }
@@ -258,10 +266,6 @@ function detectTopic(question: string): BaguaTopic {
 
   if (/健康|身体|睡眠|压力|状态|焦虑/.test(question)) {
     return "健康";
-  }
-
-  if (/选择|要不要|是否|还是|决策|机会|该不该|能不能/.test(question)) {
-    return "选择";
   }
 
   return "综合";
@@ -445,6 +449,13 @@ export function generateBagua(input: BaguaInput, readingSeed = "") {
     changed: changedHexagram,
     topic,
   });
+  const choiceDirection = topic === "选择"
+    ? /(?:A|Ａ).*?(?:B|Ｂ)|(?:B|Ｂ).*?(?:A|Ａ)/i.test(input.question)
+      ? `选择方向：当前更适合优先验证选项 ${bytes[7] % 2 === 0 ? "A" : "B"}，先用一个可回滚的小动作确认资源、边界和真实反馈；若关键条件不满足，再回到另一项比较。`
+      : ["同气", "内生外"].includes(mainHexagram.relation)
+        ? "选择方向：当前更适合先推进并做低成本验证，再根据外部反馈加码。"
+        : "选择方向：当前更适合先补信息、设停止条件，再决定是否推进。"
+    : undefined;
 
   return {
     input,
@@ -453,6 +464,7 @@ export function generateBagua(input: BaguaInput, readingSeed = "") {
     yao: buildYao(lines, movingLine),
     movingLine,
     moving,
+    choiceDirection,
     mainHexagram,
     changedHexagram,
     mutualHexagram,
@@ -480,6 +492,7 @@ export function buildBaguaReading(result: ReturnType<typeof generateBagua>) {
     `互卦：${result.mutualHexagram.name}，看事情内部结构和隐含过程，提示「${result.mutualHexagram.nature}」。`,
     `错卦：${result.oppositeHexagram.name}，看反面风险；综卦：${result.reversedHexagram.name}，看换位视角。两者用于校验盲点，不单独定吉凶。`,
     `行动建议：${result.mainHexagram.advice}${result.changedHexagram.advice}先用一个可验证的小动作观察现实反馈，再决定是否加码。`,
+    result.choiceDirection ?? "",
     "边界提醒：八卦问事适合判断当前窗口、节奏和行动提醒，不应替代医疗、法律、投资或重大现实决策中的专业意见。",
   ].join("\n\n");
 

@@ -19,7 +19,7 @@ export default async function MemberCompanionPage() {
           description="围绕一个真正重要的问题连续跟进 30 天，把零散对话整理成可执行的阶段判断。"
         />
 
-        <Panel title="30 天深度陪伴" description="¥99 会员专属能力" icon={Route}>
+        <Panel title="30 天深度陪伴" description="年度会员（¥399/年）专属能力" icon={Route}>
           <div className="grid gap-px bg-[#20252d] lg:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
             <div className="bg-[#101318] p-5 sm:p-7">
               <p className="text-xs font-medium text-[#d8b873]">不是多一包次数，而是连续看同一个问题</p>
@@ -60,7 +60,7 @@ export default async function MemberCompanionPage() {
                 href="/pricing#plan-yearly"
                 className="mt-7 inline-flex h-11 items-center justify-center gap-2 rounded-md bg-[#c9a35f] px-4 text-sm font-medium text-[#17130d] transition hover:bg-[#efd9a6]"
               >
-                查看 99 元陪伴方案
+                查看年度会员方案（¥399/年）
                 <ArrowRight size={16} aria-hidden="true" />
               </Link>
             </div>
