@@ -59,6 +59,12 @@ const spreads = [
     detail: "过去、现在、未来",
   },
   {
+    code: "three_month",
+    title: "三个月节奏",
+    feature: "tarot_three_card",
+    detail: "第一个月、第二个月、第三个月",
+  },
+  {
     code: "love",
     title: "爱情牌阵",
     feature: "tarot_love",

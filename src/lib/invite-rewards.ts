@@ -5,7 +5,6 @@ import {
   createDecipheriv,
   createHash,
   createHmac,
-  timingSafeEqual,
 } from "crypto";
 import { cookies } from "next/headers";
 import { headers } from "next/headers";
@@ -19,7 +18,8 @@ import {
 import { resolvePublicAppOrigin } from "@/lib/public-origin";
 
 export type InviteRewardRecord = {
-  inviteeId: string;
+  recordId: string;
+  inviteeLabel: string;
   createdAt: string;
   inviterStarGrant: number;
   inviteeStarGrant: number;
@@ -27,9 +27,7 @@ export type InviteRewardRecord = {
 };
 
 export type InviteRewardSummary = {
-  code: string;
   displayCode: string;
-  invitePath: string;
   inviteUrl: string;
   inviterStarGrant: number;
   inviteeStarGrant: number;
@@ -41,9 +39,12 @@ export type InviteRewardSummary = {
 
 type InviteAttributionPayload = {
   code: string;
-  inviterId: string;
   firstSeenAt: string;
   lastSeenAt: string;
+};
+
+type ResolvedInviteAttribution = InviteAttributionPayload & {
+  inviterId: string;
 };
 
 type InviteRewardEvent = "landing" | "rewarded" | "skipped";
@@ -66,7 +67,6 @@ type InviteRewardMetadata = {
 const inviteCookieName = "xuanji_invite_attr";
 const inviteCookieMaxAgeSeconds = 60 * 60 * 24 * 30;
 const inviteCodeVersion = "v2";
-const legacyInviteCodeVersion = "v1";
 const inviteCodeAad = Buffer.from("xuanji-invite-code-v2", "utf8");
 const rewardFeature = "invite_reward";
 
@@ -96,13 +96,6 @@ function toBase64Url(value: string) {
 
 function fromBase64Url(value: string) {
   return Buffer.from(value, "base64url").toString("utf8");
-}
-
-function signLegacyInviteUserId(userId: string) {
-  return createHmac("sha256", getInviteSecret())
-    .update(`${legacyInviteCodeVersion}:${userId}`)
-    .digest("base64url")
-    .slice(0, 18);
 }
 
 function getInviteEncryptionKey() {
@@ -172,14 +165,21 @@ function getInviteDisplayCode(userId: string) {
     .toUpperCase();
 }
 
-function signaturesMatch(actual: string, expected: string) {
-  const actualBuffer = Buffer.from(actual);
-  const expectedBuffer = Buffer.from(expected);
+function getInviteeLabel(inviteeId: string) {
+  const token = createHmac("sha256", getInviteSecret())
+    .update(`${inviteCodeVersion}:invitee-label:${inviteeId}`)
+    .digest("hex")
+    .slice(0, 8)
+    .toUpperCase();
 
-  return (
-    actualBuffer.length === expectedBuffer.length &&
-    timingSafeEqual(actualBuffer, expectedBuffer)
-  );
+  return `#${token}`;
+}
+
+function getInviteRewardRecordId(inviteeId: string, createdAt: string) {
+  return createHmac("sha256", getInviteSecret())
+    .update(`${inviteCodeVersion}:reward-record:${inviteeId}:${createdAt}`)
+    .digest("base64url")
+    .slice(0, 16);
 }
 
 function readString(value: unknown) {
@@ -215,17 +215,15 @@ function decodeAttributionPayload(value: string | undefined) {
     }
 
     const code = readString(parsed.code);
-    const inviterId = readString(parsed.inviterId);
     const firstSeenAt = readString(parsed.firstSeenAt);
     const lastSeenAt = readString(parsed.lastSeenAt);
 
-    if (!code || !inviterId || !firstSeenAt || !lastSeenAt) {
+    if (!code || !firstSeenAt || !lastSeenAt) {
       return null;
     }
 
     return {
       code,
-      inviterId,
       firstSeenAt,
       lastSeenAt,
     } satisfies InviteAttributionPayload;
@@ -296,55 +294,18 @@ export function parseInviteCode(code: string | undefined) {
   const normalized = normalizeInviteCode(code);
   const encryptedUserId = decryptInviteUserId(normalized);
 
-  if (encryptedUserId) {
-    if (
-      encryptedUserId.length > 160 ||
-      /[\u0000-\u001F\u007F]/.test(encryptedUserId)
-    ) {
-      return null;
-    }
-
-    return {
-      code: normalized,
-      inviterId: encryptedUserId,
-    };
-  }
-
-  const legacyPrefix = `${legacyInviteCodeVersion}_`;
-  const legacySignatureLength = 18;
-  const signatureSeparatorIndex = normalized.length - legacySignatureLength - 1;
-
   if (
-    !normalized.startsWith(legacyPrefix) ||
-    signatureSeparatorIndex <= legacyPrefix.length ||
-    normalized[signatureSeparatorIndex] !== "_"
+    !encryptedUserId ||
+    encryptedUserId.length > 160 ||
+    /[\u0000-\u001F\u007F]/.test(encryptedUserId)
   ) {
     return null;
   }
 
-  const encodedUserId = normalized.slice(legacyPrefix.length, signatureSeparatorIndex);
-  const signature = normalized.slice(signatureSeparatorIndex + 1);
-
-  try {
-    const userId = fromBase64Url(encodedUserId);
-
-    if (!userId || userId.length > 160 || /[\u0000-\u001F\u007F]/.test(userId)) {
-      return null;
-    }
-
-    const expected = signLegacyInviteUserId(userId);
-
-    if (!signaturesMatch(signature, expected)) {
-      return null;
-    }
-
-    return {
-      code: normalized,
-      inviterId: userId,
-    };
-  } catch {
-    return null;
-  }
+  return {
+    code: normalized,
+    inviterId: encryptedUserId,
+  };
 }
 
 export function getInviteLinkForUser(userId: string, appOrigin?: string) {
@@ -376,7 +337,6 @@ export async function writeInviteAttribution(input: {
   const isSameInvite = existing?.code === invite.code;
   const payload = {
     code: invite.code,
-    inviterId: invite.inviterId,
     firstSeenAt: isSameInvite ? existing?.firstSeenAt ?? now : now,
     lastSeenAt: now,
   } satisfies InviteAttributionPayload;
@@ -393,6 +353,7 @@ export async function writeInviteAttribution(input: {
     {
       event: "landing",
       ...payload,
+      inviterId: invite.inviterId,
       referrer: input.referrer?.slice(0, 240),
       userAgent: input.userAgent?.slice(0, 240),
     },
@@ -412,11 +373,14 @@ export async function readInviteAttribution() {
 
   const invite = parseInviteCode(payload.code);
 
-  if (!invite || invite.inviterId !== payload.inviterId) {
+  if (!invite) {
     return null;
   }
 
-  return payload;
+  return {
+    ...payload,
+    inviterId: invite.inviterId,
+  } satisfies ResolvedInviteAttribution;
 }
 
 export async function clearInviteAttribution() {
@@ -527,7 +491,8 @@ export async function getInviteRewardSummary(userId: string) {
       }
 
       return {
-        inviteeId: metadata.inviteeId,
+        recordId: getInviteRewardRecordId(metadata.inviteeId, log.createdAt),
+        inviteeLabel: getInviteeLabel(metadata.inviteeId),
         createdAt: log.createdAt,
         inviterStarGrant: metadata.inviterStarGrant ?? inviteRewardConfig.inviterStarGrant,
         inviteeStarGrant: metadata.inviteeStarGrant ?? inviteRewardConfig.inviteeStarGrant,
@@ -539,7 +504,8 @@ export async function getInviteRewardSummary(userId: string) {
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
   return {
-    ...link,
+    displayCode: link.displayCode,
+    inviteUrl: link.inviteUrl,
     ...inviteRewardConfig,
     totalAccepted: rewards.length,
     totalStarsEarned: rewards.reduce((sum, reward) => sum + reward.inviterStarGrant, 0),

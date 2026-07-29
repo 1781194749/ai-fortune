@@ -51,7 +51,6 @@ type EntitlementBalance = {
 };
 
 type MissingRequirement = {
-  code: string;
   label: string;
   message: string;
   href: string;
@@ -396,7 +395,7 @@ export function DeepReportClient({
       setReportQuota(data.entitlement);
     }
 
-    setMessage("已使用 1 份会员报告额度，深度报告已进入生成队列。");
+    setMessage("已使用 1 份会员报告额度，深度报告正在生成。");
   }
 
   async function retryReport(reportId: string) {
@@ -439,7 +438,7 @@ export function DeepReportClient({
       setReportQuota(data.entitlement);
     }
 
-    setMessage(data.message ?? "深度报告已重新进入生成队列。");
+    setMessage(data.message ?? "深度报告已重新开始生成。");
   }
 
   async function generateReport(orderId: string) {
@@ -483,7 +482,7 @@ export function DeepReportClient({
     );
     setMessage(
       data.queued
-        ? "深度报告已进入生成队列。"
+        ? "深度报告正在生成。"
         : data.reused
           ? "该订单已生成过报告，已为你读取。"
           : "深度报告已生成。",

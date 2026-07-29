@@ -3,9 +3,10 @@ import { recordCheckoutExperimentPaid } from "@/lib/checkout-experiment";
 import { isDeepReportProductCode } from "@/lib/deep-report";
 import { settleOptionalSideEffects } from "@/lib/optional-side-effects";
 import { recordPromotionEvent } from "@/lib/promo-code";
-import { isDatabaseUnavailableError } from "@/lib/prisma";
+import { publicApiErrorResponse } from "@/lib/public-api-error";
 import { createSession, getSession } from "@/lib/session";
 import { recordShareAttributionConversion } from "@/lib/share-attribution";
+import { getPersistedAccountState } from "@/lib/user-store";
 
 export async function POST(
   _request: Request,
@@ -24,10 +25,12 @@ export async function POST(
     try {
       result = await completeMockOrder(orderId, session);
     } catch (error) {
-      return Response.json(
-        { ok: false, message: error instanceof Error ? error.message : "支付处理失败。" },
-        { status: 503 },
-      );
+      return publicApiErrorResponse(error, {
+        context: "complete mock payment order",
+        message: "支付处理失败，请稍后重试。",
+        status: 503,
+        unavailableMessage: "支付服务暂时不可用，请稍后重试。",
+      });
     }
 
     if (!result.ok) {
@@ -39,10 +42,13 @@ export async function POST(
       return Response.json(
         {
           ok: false,
-          code: result.reason,
-          message: "message" in result && result.message
-            ? result.message
-            : "订单不存在或不可支付。",
+          message: result.reason === "MEMBERSHIP_DOWNGRADE_BLOCKED"
+            ? "当前为更高等级会员，暂不能购买该方案，请在当前会员到期后再试。"
+            : result.reason === "ORDER_NOT_PAYABLE"
+              ? "订单当前不可支付。"
+              : result.reason === "ORDER_FORBIDDEN"
+                ? "无权操作该订单。"
+                : "订单不存在。",
           availableAt: "availableAt" in result ? result.availableAt : undefined,
         },
         { status },
@@ -91,29 +97,43 @@ export async function POST(
       }),
     ]);
 
+    const accountState = await getPersistedAccountState(result.nextSession.userId, {
+      tier: result.nextSession.tier,
+      starBalance: result.nextSession.starBalance,
+      chatQuota: result.nextSession.chatQuota,
+      chatUsed: result.nextSession.chatUsed,
+      profileLimit: result.nextSession.profileLimit,
+      quotaPeriodStart: result.nextSession.quotaPeriodStart,
+    });
+
     await createSession({
       userId: result.nextSession.userId,
       emailMasked: result.nextSession.emailMasked,
-      tier: result.nextSession.tier,
-      starBalance: result.nextSession.starBalance,
+      ...accountState,
     });
 
     return Response.json({
       ok: true,
       order: getOrderDisplay(result.order),
-      transaction: result.transaction,
+      transaction: result.transaction
+        ? {
+            type: result.transaction.type,
+            amount: result.transaction.amount,
+            balanceAfter: result.transaction.balanceAfter,
+            reason: result.transaction.reason,
+            createdAt: result.transaction.createdAt,
+          }
+        : null,
       redirectTo: isDeepReportProductCode(result.order.productCode)
         ? `/reports/deep?orderId=${result.order.id}`
-        : "/member",
+        : "/member/entitlements",
     });
   } catch (error) {
-    if (isDatabaseUnavailableError(error)) {
-      return Response.json(
-        { ok: false, code: error.code, message: error.message },
-        { status: error.status },
-      );
-    }
-
-    throw error;
+    return publicApiErrorResponse(error, {
+      context: "finalize mock payment response",
+      message: "支付处理失败，请稍后重试。",
+      status: 503,
+      unavailableMessage: "支付服务暂时不可用，请稍后重试。",
+    });
   }
 }

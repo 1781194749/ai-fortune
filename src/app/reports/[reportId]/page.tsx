@@ -10,6 +10,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { getMockReport } from "@/lib/report-store";
+import { toCustomerReport } from "@/lib/report-public-view";
 import { createLoginHref } from "@/lib/return-to";
 import { getSession } from "@/lib/session";
 import { brand } from "@/lib/site";
@@ -53,11 +54,13 @@ export default async function ReportDetailPage({
     redirect(createLoginHref(`/reports/${encodeURIComponent(reportId)}`));
   }
 
-  const report = await getMockReport(reportId);
+  const storedReport = await getMockReport(reportId);
 
-  if (!report || report.userId !== session.userId) {
+  if (!storedReport || storedReport.userId !== session.userId) {
     notFound();
   }
+
+  const report = toCustomerReport(storedReport);
 
   const status = statusMeta(report.status);
   const StatusIcon = status.icon;
@@ -77,7 +80,7 @@ export default async function ReportDetailPage({
             <span className="block text-xs text-[#b9ad99]">{brand.en}</span>
           </span>
         </Link>
-        <Link href="/member" className="text-sm text-[#d8cab2] hover:text-[#f0d49a]">
+        <Link href="/member/reports" className="text-sm text-[#d8cab2] hover:text-[#f0d49a]">
           返回个人中心
         </Link>
       </div>
@@ -121,27 +124,15 @@ export default async function ReportDetailPage({
           </div>
         </div>
 
-        <div className="mt-5 grid gap-3 md:grid-cols-4">
+        <div className="mt-5 grid gap-3 md:grid-cols-2">
           <div className="rounded-md border border-[#2f261a] bg-[#080705] p-3">
             <p className="text-xs text-[#b9ad99]">报告类型</p>
             <p className="mt-2 text-sm font-semibold text-[#fff7e8]">{report.type}</p>
           </div>
           <div className="rounded-md border border-[#2f261a] bg-[#080705] p-3">
-            <p className="text-xs text-[#b9ad99]">模型</p>
-            <p className="mt-2 text-sm font-semibold text-[#fff7e8]">
-              {report.modelUsed ?? "local-tools"}
-            </p>
-          </div>
-          <div className="rounded-md border border-[#2f261a] bg-[#080705] p-3">
-            <p className="text-xs text-[#b9ad99]">成本 token</p>
-            <p className="mt-2 text-sm font-semibold text-[#fff7e8]">
-              {report.costTokens ?? 0}
-            </p>
-          </div>
-          <div className="rounded-md border border-[#2f261a] bg-[#080705] p-3">
-            <p className="text-xs text-[#b9ad99]">分享标识</p>
+            <p className="text-xs text-[#b9ad99]">报告编号</p>
             <p className="mt-2 break-all text-sm font-semibold text-[#fff7e8]">
-              {report.shareSlug ?? "未生成"}
+              {report.id}
             </p>
           </div>
         </div>
@@ -159,15 +150,6 @@ export default async function ReportDetailPage({
         )}
 
         <div className="mt-6"><ReportMarkdown content={report.content} /></div>
-
-        <details className="mt-8 rounded-md border border-[#2f261a] bg-[#080705] p-4">
-          <summary className="cursor-pointer text-sm font-semibold text-[#f0d49a]">
-            查看工具结果
-          </summary>
-          <pre className="mt-4 max-h-[420px] overflow-auto text-xs leading-6 text-[#b9ad99]">
-            {JSON.stringify(report.toolResults, null, 2)}
-          </pre>
-        </details>
       </article>
     </main>
   );

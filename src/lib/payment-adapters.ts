@@ -1,6 +1,6 @@
 import "server-only";
 
-import { createDecipheriv, createSign, createVerify } from "crypto";
+import { createDecipheriv, createSign, createVerify, randomBytes } from "crypto";
 import {
   type ProductCode,
   type Product,
@@ -9,6 +9,7 @@ import {
   isProductCode,
 } from "@/lib/commerce";
 import {
+  closePendingPaymentOrder,
   createPaymentOrder,
   getMockOrder,
   getOrderDisplay,
@@ -104,6 +105,87 @@ function signAlipayParams(params: Record<string, string>) {
   signer.end();
 
   return signer.sign(normalizePem(privateKey, "PRIVATE KEY"), "base64");
+}
+
+async function requestWechatNativeCodeUrl(input: {
+  endpoint: string;
+  request: {
+    appid: string;
+    mchid: string;
+    description: string;
+    out_trade_no: string;
+    notify_url: string;
+    amount: {
+      total: number;
+      currency: string;
+    };
+  };
+}) {
+  const privateKey = process.env.WECHAT_PAY_PRIVATE_KEY;
+  const serialNo = process.env.WECHAT_PAY_SERIAL_NO;
+
+  if (!privateKey || !serialNo) {
+    return {
+      ok: false as const,
+      message: "微信支付服务暂不可用。",
+      safeToClose: true as const,
+    };
+  }
+
+  const body = JSON.stringify(input.request);
+  const url = new URL(input.endpoint);
+  const canonicalUrl = `${url.pathname}${url.search}`;
+  const timestamp = Math.floor(Date.now() / 1000).toString();
+  const nonce = randomBytes(16).toString("hex");
+  let signature: string;
+
+  try {
+    const signer = createSign("RSA-SHA256");
+    signer.update(`POST\n${canonicalUrl}\n${timestamp}\n${nonce}\n${body}\n`, "utf8");
+    signer.end();
+    signature = signer.sign(normalizePem(privateKey, "PRIVATE KEY"), "base64");
+  } catch {
+    return {
+      ok: false as const,
+      message: "微信支付签名服务暂不可用。",
+      safeToClose: true as const,
+    };
+  }
+  const authorization = [
+    `mchid="${input.request.mchid}"`,
+    `nonce_str="${nonce}"`,
+    `signature="${signature}"`,
+    `timestamp="${timestamp}"`,
+    `serial_no="${serialNo}"`,
+  ].join(",");
+
+  const response = await fetch(input.endpoint, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      Authorization: `WECHATPAY2-SHA256-RSA2048 ${authorization}`,
+      "Content-Type": "application/json",
+      "User-Agent": "XuanjiAI/1.0",
+    },
+    body,
+    cache: "no-store",
+    signal: AbortSignal.timeout(12_000),
+  });
+  const payload = (await response.json().catch(() => null)) as
+    | { code_url?: unknown; code?: unknown; message?: unknown }
+    | null;
+
+  if (!response.ok || typeof payload?.code_url !== "string" || !payload.code_url) {
+    return {
+      ok: false as const,
+      message: "微信支付预下单失败。",
+      providerStatus: response.status,
+      providerCode: typeof payload?.code === "string" ? payload.code : undefined,
+      safeToClose: response.status >= 400 && response.status < 500,
+    };
+  }
+
+  return { ok: true as const, codeUrl: payload.code_url };
 }
 
 export function verifyAlipayNotify(params: Record<string, string>) {
@@ -360,36 +442,75 @@ export async function createLivePaymentCheckout(input: {
   const displayOrder = getOrderDisplay(order);
   const appUrl = getAppUrl();
 
-  if (input.channel === "alipay") {
-    const params: Record<string, string> = {
-      app_id: process.env.ALIPAY_APP_ID ?? "",
-      method: "alipay.trade.page.pay",
-      charset: "utf-8",
-      sign_type: "RSA2",
-      timestamp: new Date().toISOString().replace("T", " ").slice(0, 19),
-      version: "1.0",
-      notify_url: `${appUrl}/api/payments/alipay/notify`,
-      return_url: `${appUrl}/member`,
-      biz_content: JSON.stringify({
-        out_trade_no: order.id,
-        product_code: "FAST_INSTANT_TRADE_PAY",
-        total_amount: (order.amountCents / 100).toFixed(2),
-        subject: product.name,
-      }),
-    };
-    const sign = signAlipayParams(params);
+  const closeUnsubmittedOrder = () => closePendingPaymentOrder({
+    orderId: order.id,
+    userId: input.session.userId,
+    provider,
+  });
 
-    return {
-      ok: true as const,
-      channel: input.channel,
-      order: displayOrder,
-      checkout: {
-        type: "alipay_page_pay",
-        gateway: getAlipayGateway(),
-        params: sign ? { ...params, sign } : params,
-        priceLabel: formatPrice(order.amountCents, order.currency),
-      },
-    };
+  if (input.channel === "alipay") {
+    try {
+      const params: Record<string, string> = {
+        app_id: process.env.ALIPAY_APP_ID ?? "",
+        method: "alipay.trade.page.pay",
+        charset: "utf-8",
+        sign_type: "RSA2",
+        timestamp: new Date().toISOString().replace("T", " ").slice(0, 19),
+        version: "1.0",
+        notify_url: `${appUrl}/api/payments/alipay/notify`,
+        return_url: `${appUrl}/member`,
+        biz_content: JSON.stringify({
+          out_trade_no: order.id,
+          product_code: "FAST_INSTANT_TRADE_PAY",
+          total_amount: (order.amountCents / 100).toFixed(2),
+          subject: product.name,
+        }),
+      };
+      const sign = signAlipayParams(params);
+
+      if (!sign) {
+        await closeUnsubmittedOrder();
+        return { ok: false as const, message: "支付宝签名服务暂不可用。" };
+      }
+
+      return {
+        ok: true as const,
+        channel: input.channel,
+        order: displayOrder,
+        checkout: {
+          type: "alipay_page_pay" as const,
+          gateway: getAlipayGateway(),
+          params: { ...params, sign },
+          priceLabel: formatPrice(order.amountCents, order.currency),
+        },
+      };
+    } catch (error) {
+      await closeUnsubmittedOrder();
+      throw error;
+    }
+  }
+
+  const wechatRequest = {
+    appid: process.env.WECHAT_APP_ID as string,
+    mchid: process.env.WECHAT_PAY_MCH_ID as string,
+    description: product.name,
+    out_trade_no: order.id,
+    notify_url: `${appUrl}/api/payments/wechat/notify`,
+    amount: {
+      total: order.amountCents,
+      currency: order.currency,
+    },
+  };
+  const prepared = await requestWechatNativeCodeUrl({
+    endpoint: "https://api.mch.weixin.qq.com/v3/pay/transactions/native",
+    request: wechatRequest,
+  });
+
+  if (!prepared.ok) {
+    if (prepared.safeToClose) {
+      await closeUnsubmittedOrder();
+    }
+    return prepared;
   }
 
   return {
@@ -397,19 +518,8 @@ export async function createLivePaymentCheckout(input: {
     channel: input.channel,
     order: displayOrder,
     checkout: {
-      type: "wechat_native_prepare",
-      endpoint: "https://api.mch.weixin.qq.com/v3/pay/transactions/native",
-      request: {
-        appid: process.env.WECHAT_APP_ID,
-        mchid: process.env.WECHAT_PAY_MCH_ID,
-        description: product.name,
-        out_trade_no: order.id,
-        notify_url: `${appUrl}/api/payments/wechat/notify`,
-        amount: {
-          total: order.amountCents,
-          currency: order.currency,
-        },
-      },
+      type: "wechat_native" as const,
+      codeUrl: prepared.codeUrl,
       priceLabel: formatPrice(order.amountCents, order.currency),
     },
   };

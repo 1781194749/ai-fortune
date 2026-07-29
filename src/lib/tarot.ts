@@ -6,6 +6,7 @@ import { tarotDeck, type TarotCard, type TarotTopic } from "@/lib/tarot-deck";
 export type TarotSpread =
   | "daily"
   | "three_card"
+  | "three_month"
   | "love"
   | "decision"
   | "career"
@@ -61,6 +62,15 @@ const spreadDefinitions: Record<TarotSpread, SpreadDefinition> = {
       { name: "过去影响", focus: "影响这件事的旧模式、前因或已经发生的关键线索。" },
       { name: "当前状态", focus: "此刻正在起作用的情绪、资源、阻力和真实位置。" },
       { name: "未来趋势", focus: "如果延续当前节奏，短期最可能显现的方向。" },
+    ],
+  },
+  three_month: {
+    title: "塔罗三个月节奏牌阵",
+    subtitle: "按第一个月、第二个月和第三个月拆解阶段信号，避免把过去/现在/未来牌位误写成逐月预测。",
+    positions: [
+      { name: "第一个月", focus: "未来第一个月最值得观察的现实信号、阻力和可逆行动。" },
+      { name: "第二个月", focus: "未来第二个月在延续当前节奏时可能出现的变化与验证重点。" },
+      { name: "第三个月", focus: "未来第三个月适合复盘的结果、边界和调整条件。" },
     ],
   },
   love: {
@@ -170,6 +180,10 @@ export function selectTarotSpread(question: string): TarotSpread {
     return "three_card";
   }
 
+  if (/未来.{0,4}三个月|接下来.{0,4}三个月|三个月(?:内|的|行动|节奏|走向|趋势)/.test(normalized)) {
+    return "three_month";
+  }
+
   if (/凯尔特|十字|十张|全局|深度|复杂|长期|整体拆解/.test(normalized)) {
     return "celtic_cross";
   }
@@ -216,8 +230,8 @@ function buildSynthesis(cards: TarotDrawnCard[], topic: TarotTopic) {
       : "这组牌小阿卡那占比更高，说明答案会落到具体行动、沟通、资源和日常选择里。";
   const direction =
     reversedCount >= Math.ceil(cards.length / 2)
-      ? "逆位较多，当前更需要先处理阻塞、误解或能量不足，再谈推进。"
-      : "正位较多，当前具备推进空间，但仍要按牌位提示控制节奏。";
+      ? "逆位较多，表示这些牌的主题更偏向内化、受阻或需要调整；逆位不自动等于负面，仍要逐张结合牌位判断。"
+      : "正位较多，表示这些牌的主题较容易外显；正位不自动等于更好的选择，仍要逐张结合牌位判断。";
 
   return `综合看，${topicLabel}的主调落在「${dominantElement}」这条线上。${structure}${direction}`;
 }
@@ -275,9 +289,7 @@ export function buildTarotReading(input: {
   const decisionCards = input.spread === "decision" ? input.cards.slice(0, 2) : [];
   const decisionRecommendation =
     decisionCards.length === 2
-      ? decisionCards[0].orientation !== decisionCards[1].orientation
-        ? `二选一倾向：${decisionCards[0].orientation === "正位" ? "A" : "B"} 更适合先验证。牌面倾向只用于当前比较，不替代现实信息。`
-        : "二选一倾向：两项信号接近，暂不建议仓促拍板；先补充一个可验证条件再决定。"
+      ? `二选一解读：A 对应「${decisionCards[0].card}」${decisionCards[0].orientation}，B 对应「${decisionCards[1].card}」${decisionCards[1].orientation}；正逆位不作分数高低，需比较两张牌各自的机会、代价和第三张选择原则。`
       : "";
   const content = [
     summary,

@@ -2,7 +2,7 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 import { getRecentChatSessions } from "@/lib/ai-session-store";
-import { tryPrisma } from "@/lib/prisma";
+import { DatabaseUnavailableError, tryPrisma } from "@/lib/prisma";
 import { ensureDbUser } from "@/lib/user-store";
 
 const companionFeature = "member_key_stage_companion";
@@ -10,9 +10,15 @@ const companionDurationDays = 30;
 
 export type CompanionReviewKind = "weekly" | "monthly";
 
+export class MemberCompanionActionError extends Error {
+  constructor(readonly publicMessage: string) {
+    super(publicMessage);
+    this.name = "MemberCompanionActionError";
+  }
+}
+
 export type CompanionTheme = {
   id: string;
-  userId: string;
   title: string;
   context: string | null;
   startedAt: string;
@@ -39,6 +45,12 @@ export type MemberCompanionState = {
     weekly: CompanionReviewAvailability;
     monthly: CompanionReviewAvailability;
   };
+};
+
+export type PublicMemberCompanionState = {
+  theme: Omit<CompanionTheme, "id"> | null;
+  reviews: Array<Omit<CompanionReview, "id" | "themeId">>;
+  availability: MemberCompanionState["availability"];
 };
 
 export type CompanionReviewAvailability = {
@@ -201,7 +213,7 @@ async function writeEvent(userId: string, event: CompanionEvent) {
     } satisfies CompanionEvent;
   });
   if (!dbResult.ok) {
-    throw new Error("PostgreSQL 暂时不可用，阶段陪伴数据未保存。请稍后重试。");
+    throw new DatabaseUnavailableError("PostgreSQL 暂时不可用，阶段陪伴数据未保存。");
   }
 
   return dbResult.value;
@@ -220,7 +232,7 @@ export async function getMemberCompanionState(userId: string) {
   });
 
   if (!dbResult.ok) {
-    throw new Error("PostgreSQL 暂时不可用，无法读取阶段陪伴数据。");
+    throw new DatabaseUnavailableError("PostgreSQL 暂时不可用，无法读取阶段陪伴数据。");
   }
 
   return stateFromEvents(dbResult.value);
@@ -235,7 +247,7 @@ export async function saveMemberCompanionTheme(input: {
   const context = cleanText(input.context, 500) || null;
 
   if (!title) {
-    throw new Error("请填写本月最重要的核心主题。");
+    throw new MemberCompanionActionError("请填写本月最重要的核心主题。");
   }
 
   const state = await getMemberCompanionState(input.userId);
@@ -244,7 +256,6 @@ export async function saveMemberCompanionTheme(input: {
   const stillActive = currentTheme && new Date(currentTheme.endsAt).getTime() > now.getTime();
   const theme: CompanionTheme = {
     id: stillActive ? currentTheme.id : `theme_${randomUUID()}`,
-    userId: input.userId,
     title,
     context,
     startedAt: stillActive ? currentTheme.startedAt : now.toISOString(),
@@ -260,6 +271,32 @@ export async function saveMemberCompanionTheme(input: {
 
   await writeEvent(input.userId, event);
   return getMemberCompanionState(input.userId);
+}
+
+export function toPublicMemberCompanionState(
+  state: MemberCompanionState,
+): PublicMemberCompanionState {
+  return {
+    theme: state.theme
+      ? {
+          title: state.theme.title,
+          context: state.theme.context,
+          startedAt: state.theme.startedAt,
+          endsAt: state.theme.endsAt,
+          updatedAt: state.theme.updatedAt,
+        }
+      : null,
+    reviews: state.reviews.map((review) => ({
+      kind: review.kind,
+      title: review.title,
+      summary: review.summary,
+      signals: review.signals,
+      nextActions: review.nextActions,
+      chatCount: review.chatCount,
+      createdAt: review.createdAt,
+    })),
+    availability: state.availability,
+  };
 }
 
 function buildReview(input: {
@@ -302,13 +339,13 @@ export async function generateMemberCompanionReview(input: {
   const state = await getMemberCompanionState(input.userId);
 
   if (!state.theme) {
-    throw new Error("请先设置本月核心主题。");
+    throw new MemberCompanionActionError("请先设置本月核心主题。");
   }
 
   const availability = state.availability[input.kind];
 
   if (!availability.available) {
-    throw new Error(availability.message);
+    throw new MemberCompanionActionError(availability.message);
   }
 
   const recentChats = await getRecentChatSessions(input.userId, 20);

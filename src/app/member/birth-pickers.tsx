@@ -81,6 +81,7 @@ const currentYear = new Date().getFullYear();
 const yearOptions = Array.from({ length: currentYear - 1919 }, (_, index) => currentYear - index);
 const hourOptions = Array.from({ length: 24 }, (_, index) => String(index).padStart(2, "0"));
 const minuteOptions = Array.from({ length: 60 }, (_, index) => String(index).padStart(2, "0"));
+const allBirthCalendarTypes = ["solar", "lunar", "yinli"] as const;
 
 function getDefaultParts(calendarType: BirthCalendarType, value: string): DateParts {
   const fallback = { year: Math.max(1920, currentYear - 28), month: 1, day: 1 };
@@ -194,11 +195,13 @@ function PickerShell({
 function CalendarModeTabs({
   value,
   onChange,
+  options,
 }: {
   value: BirthCalendarType;
   onChange: (value: BirthCalendarType) => void;
+  options: ReadonlyArray<(typeof birthCalendarOptions)[number]>;
 }) {
-  const selectedOption = birthCalendarOptions.find((option) => option.value === value);
+  const selectedOption = options.find((option) => option.value === value);
 
   return (
     <div>
@@ -209,9 +212,11 @@ function CalendarModeTabs({
       <div
         role="radiogroup"
         aria-label="出生历法"
-        className="mt-3 grid grid-cols-3 rounded-2xl border border-[#34352e] bg-[#090a08] p-1.5"
+        className={`mt-3 grid rounded-2xl border border-[#34352e] bg-[#090a08] p-1.5 ${
+          options.length === 2 ? "grid-cols-2" : "grid-cols-3"
+        }`}
       >
-        {birthCalendarOptions.map((option) => {
+        {options.map((option) => {
           const selected = value === option.value;
 
           return (
@@ -501,21 +506,33 @@ function BirthDateDialog({
 export function BirthDatePicker({
   value,
   calendarType,
+  calendarTypes = allBirthCalendarTypes,
   onCalendarTypeChange,
   onChange,
 }: {
   value: string;
   calendarType: string;
+  calendarTypes?: ReadonlyArray<BirthCalendarType>;
   onCalendarTypeChange: (value: BirthCalendarType) => void;
   onChange: (value: string) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const normalizedType = normalizeBirthCalendarType(calendarType);
+  const requestedType = normalizeBirthCalendarType(calendarType);
+  const normalizedType = calendarTypes.includes(requestedType)
+    ? requestedType
+    : calendarTypes[0] ?? "solar";
+  const calendarOptions = birthCalendarOptions.filter((option) =>
+    calendarTypes.includes(option.value),
+  );
   const formatted = formatBirthDate(value, normalizedType);
 
   return (
     <div>
-      <CalendarModeTabs value={normalizedType} onChange={onCalendarTypeChange} />
+      <CalendarModeTabs
+        value={normalizedType}
+        onChange={onCalendarTypeChange}
+        options={calendarOptions}
+      />
       <div className="mt-4">
         <p className="text-xs tracking-[0.18em] text-[#80796e]">出生日期</p>
         <button

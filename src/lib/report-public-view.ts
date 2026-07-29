@@ -1,4 +1,18 @@
 import type { MockReport } from "@/lib/report-store";
+import { sanitizeCustomerDocument } from "@/lib/product-identity";
+
+export type CustomerReport = Pick<
+  MockReport,
+  | "id"
+  | "type"
+  | "status"
+  | "title"
+  | "summary"
+  | "content"
+  | "shareSlug"
+  | "createdAt"
+  | "updatedAt"
+>;
 
 const sensitiveKeys = new Set([
   "question",
@@ -33,6 +47,7 @@ const replacementByKey: Record<string, string> = {
 };
 
 type SensitiveEntry = { value: string; replacement: string };
+const chineseWordSegmenter = new Intl.Segmenter("zh-CN", { granularity: "word" });
 
 function addSensitiveEntry(
   value: string,
@@ -41,7 +56,7 @@ function addSensitiveEntry(
 ) {
   const normalized = value.trim();
 
-  if (normalized.length < 2) {
+  if (normalized.length === 0) {
     return;
   }
 
@@ -57,6 +72,30 @@ function addSensitiveEntry(
     });
     entries.push({ value: `${year}年${month}月${day}日`, replacement });
   }
+}
+
+function replaceSensitiveEntry(text: string, entry: SensitiveEntry) {
+  if (entry.value.length > 1) {
+    return text.split(entry.value).join(entry.replacement);
+  }
+
+  if (text === entry.value) {
+    return entry.replacement;
+  }
+
+  let result = "";
+  for (const segment of chineseWordSegmenter.segment(text)) {
+    if (segment.isWordLike && segment.segment === entry.value) {
+      if (!result.endsWith(entry.replacement)) {
+        result += entry.replacement;
+      }
+      continue;
+    }
+
+    result += segment.segment;
+  }
+
+  return result;
 }
 
 function collectMarkedValues(
@@ -109,12 +148,14 @@ function sanitizeText(
     new Map(entries.map((entry) => [entry.value, entry])).values(),
   );
 
-  return uniqueEntries
+  const personalDataSanitized = uniqueEntries
     .sort((a, b) => b.value.length - a.value.length)
     .reduce(
-      (result, entry) => result.split(entry.value).join(entry.replacement),
+      (result, entry) => replaceSensitiveEntry(result, entry),
       text,
     );
+
+  return sanitizeCustomerDocument(personalDataSanitized);
 }
 
 export function getPublicReportView(report: MockReport) {
@@ -126,5 +167,19 @@ export function getPublicReportView(report: MockReport) {
     title: sanitizeText(report.title, entries),
     summary: sanitizeText(report.summary, entries),
     content: sanitizeText(report.content, entries),
+  };
+}
+
+export function toCustomerReport(report: MockReport): CustomerReport {
+  return {
+    id: report.id,
+    type: report.type,
+    status: report.status,
+    title: sanitizeCustomerDocument(report.title),
+    summary: sanitizeCustomerDocument(report.summary),
+    content: sanitizeCustomerDocument(report.content),
+    shareSlug: report.shareSlug,
+    createdAt: report.createdAt,
+    updatedAt: report.updatedAt,
   };
 }

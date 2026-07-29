@@ -11,7 +11,7 @@ import {
 const explicitMethodPatterns: Array<[ReadingMethod, RegExp]> = [
   ["tarot", /塔罗|牌阵|抽牌/],
   ["bagua", /八卦|起卦|起一卦|算一卦|占一卦|卦象|六十四卦/],
-  ["bazi", /八字|四柱|五行|命盘|大运|流年|出生|生日/],
+  ["bazi", /八字|四柱|五行|命盘|大运|流年/],
   ["palm", /手相|掌纹|手掌|掌丘|生命线|智慧线|感情线/],
 ];
 
@@ -91,9 +91,21 @@ export function routePromptRequest(input: {
     };
   }
 
-  if (input.pageEntry || input.hasPalmImage) {
+  if (input.hasPalmImage && input.method === "palm") {
     return {
       method: "palm",
+      scene: detectPromptScene(input.question),
+      serviceTier: input.serviceTier,
+      routeReason: input.pageEntry ? "page_entry" : "explicit_method",
+      shouldCallModel: true,
+      allowPaid: true,
+      safety: input.safety,
+    };
+  }
+
+  if (input.pageEntry) {
+    return {
+      method: input.method,
       scene: detectPromptScene(input.question),
       serviceTier: input.serviceTier,
       routeReason: "page_entry",

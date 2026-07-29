@@ -44,6 +44,15 @@ Authorized JavaScript origin: https://<your-domain>
 Authorized redirect URI: https://<your-domain>/api/auth/google/callback
 ```
 
+本地调试可以保留在同一个 Web OAuth Client 上，不需要删除线上配置：
+
+```text
+Authorized JavaScript origin: http://localhost:3000
+Authorized redirect URI: http://localhost:3000/api/auth/google/callback
+```
+
+开发环境访问 `http://localhost:3000` 时，项目会优先生成 localhost 回调；生产环境仍然使用 `APP_URL` 生成线上回调。
+
 生产服务器会通过 `google-proxy` 访问 Google OAuth；节点配置放在服务器本地
 `/opt/apps/ai-fortune-proxy/config.yaml`，不要把 VPN 订阅链接、节点密码或生成后的代理配置提交到 Git。
 

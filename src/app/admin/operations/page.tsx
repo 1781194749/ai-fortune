@@ -912,7 +912,7 @@ export default async function AdminPage({
             <span className="block text-xs text-[#b9ad99]">{brand.en}</span>
           </span>
         </Link>
-        <Link href="/member" className="text-sm text-[#d8cab2] hover:text-[#f0d49a]">
+        <Link href="/member/profile" className="text-sm text-[#d8cab2] hover:text-[#f0d49a]">
           个人中心
         </Link>
       </div>

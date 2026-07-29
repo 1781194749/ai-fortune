@@ -1,4 +1,4 @@
-import { isDatabaseUnavailableError } from "@/lib/prisma";
+import { publicApiErrorResponse } from "@/lib/public-api-error";
 import { recordShareAttributionLanding } from "@/lib/share-attribution";
 import { resolveShareTrackingSource } from "@/lib/share-tracking";
 
@@ -36,13 +36,10 @@ export async function POST(
 
     return Response.json({ ok: true, source });
   } catch (error) {
-    if (isDatabaseUnavailableError(error)) {
-      return Response.json(
-        { ok: false, code: error.code, message: error.message },
-        { status: error.status },
-      );
-    }
-
-    throw error;
+    return publicApiErrorResponse(error, {
+      context: "record shared report attribution",
+      message: "分享来源记录失败，请稍后重试。",
+      unavailableMessage: "分享服务暂时不可用，请稍后重试。",
+    });
   }
 }

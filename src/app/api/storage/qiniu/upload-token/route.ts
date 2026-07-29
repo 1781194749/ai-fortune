@@ -40,7 +40,6 @@ export async function POST(request: Request) {
     return Response.json(
       {
         ok: false,
-        code: "IMAGE_STORAGE_UNAVAILABLE",
         message: "图片服务暂未开放，请稍后再试。",
       },
       { status: 503 },
@@ -56,6 +55,10 @@ export async function POST(request: Request) {
 
   return Response.json({
     ok: true,
-    ...token,
+    mode: token.mode,
+    key: token.key,
+    token: token.token,
+    uploadUrl: token.uploadUrl,
+    expiresAt: token.expiresAt,
   });
 }

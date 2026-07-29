@@ -30,11 +30,11 @@ export function ChatServiceSelector({
         <button
           type="button"
           className="group flex h-9 shrink-0 items-center gap-1 rounded-lg px-2 text-[11px] font-medium text-[#aaa294] outline-none transition hover:bg-[#1d1e19] hover:text-[#eee6d8] focus-visible:ring-1 focus-visible:ring-[#c9a35f]/55 data-[state=open]:bg-[#1d1e19] data-[state=open]:text-[#eee6d8]"
-          aria-label={`选择问事模式，当前${selected.label}，预计 ${selected.cost} 星力`}
+          aria-label={`选择问事模式，当前${selected.label}，本轮计 ${selected.cost} 次问答`}
         >
           <span>{selected.label}</span>
           <span className="text-[#5f5b53]">·</span>
-          <span className="text-[#c9a35f]">{selected.cost} 星力</span>
+          <span className="text-[#c9a35f]">{selected.cost} 次问答</span>
           <ChevronDown
             size={13}
             className="ml-0.5 text-[#777168] transition-transform group-data-[state=open]:rotate-180"
@@ -67,7 +67,7 @@ export function ChatServiceSelector({
               <span className="min-w-0 flex-1">
                 <span className="flex items-center justify-between gap-3">
                   <span className="text-xs font-medium">{item.label}</span>
-                  <span className="shrink-0 text-[10px] text-[#c9a35f]">{item.cost} 星力</span>
+                  <span className="shrink-0 text-[10px] text-[#c9a35f]">{item.cost} 次问答</span>
                 </span>
                 <span className="mt-0.5 block truncate text-[10px] text-[#716b62]">
                   {item.description} · {item.output}

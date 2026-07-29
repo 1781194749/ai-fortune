@@ -4,10 +4,6 @@ import { useState } from "react";
 import { Check, Copy, Gift, Link2, UsersRound } from "lucide-react";
 import type { InviteRewardSummary } from "@/lib/invite-rewards";
 
-function shortId(value: string) {
-  return value.length > 12 ? `${value.slice(0, 12)}...` : value;
-}
-
 function formatTime(value: string) {
   const date = new Date(value);
 
@@ -109,8 +105,8 @@ export function InviteRewardCard({ summary }: { summary: InviteRewardSummary }) 
           <div className="divide-y divide-[#20252d]">
             {summary.recentRewards.length > 0 ? (
               summary.recentRewards.map((reward) => (
-                <div key={`${reward.inviteeId}-${reward.createdAt}`} className="flex items-center justify-between gap-3 px-4 py-3 text-xs">
-                  <span className="min-w-0 truncate text-[#c8d0dc]">新人 {shortId(reward.inviteeId)}</span>
+                <div key={reward.recordId} className="flex items-center justify-between gap-3 px-4 py-3 text-xs">
+                  <span className="min-w-0 truncate text-[#c8d0dc]">新人 {reward.inviteeLabel}</span>
                   <span className="shrink-0 text-[#8ad5bd]">+{reward.inviterStarGrant} · {formatTime(reward.createdAt)}</span>
                 </div>
               ))

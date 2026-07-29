@@ -6,9 +6,10 @@ import type {
   ReadingEvidencePackage,
   ServiceTier,
 } from "@/lib/prompts/contracts";
+import { getCustomerAnswerBoundaryIssues } from "@/lib/product-identity";
 
 const absolutePromisePatterns = [
-  /百分之百|100%|必定|命中注定/,
+  /(?:百分之百|100%)(?=[^。；\n]{0,20}(?:会|能|可以|确定|保证|确保|准确|复合|发财|中奖|治愈|胜诉|成功|回来))|必定|命中注定/,
   /(?:一定|必然|肯定|注定|绝对)(?:会|能|可以|要)?[^。；\n]{0,20}(?:复合|发财|中奖|治愈|胜诉|成功|回来)/,
   /(?<!不)(?<!不能)(?:保证|确保|包你)[^。；\n]{0,20}(?:复合|发财|中奖|治愈|胜诉|成功)/,
 ];
@@ -49,12 +50,23 @@ function patternErrors(text: string, label: string, patterns: RegExp[]) {
     .map((pattern) => `${label}: ${pattern.source}`);
 }
 
+function maskNegatedPromiseClauses(text: string) {
+  return text.replace(
+    /(?:不代表|并不代表|不能说明|无法说明|不意味着|并不意味着|不等于|不能保证|无法保证|不保证)[^。；！？\n]{0,60}(?:(?:一定|必然|肯定|注定|绝对)(?:会|能|可以|要)?[^。；！？\n]{0,20}(?:复合|发财|中奖|治愈|胜诉|成功|回来)|对方(?:一定|肯定|百分之百|绝对).{0,16}(?:爱你|想你|会回来|会复合|在撒谎))/g,
+    "[已说明并非确定结果]",
+  );
+}
+
 export function validateGeneratedTextSafety(text: string) {
+  const assertionText = maskNegatedPromiseClauses(text);
   return [
-    ...patternErrors(text, "Absolute promise is not allowed", absolutePromisePatterns),
+    ...patternErrors(assertionText, "Absolute promise is not allowed", absolutePromisePatterns),
     ...patternErrors(text, "Professional directive is not allowed", professionalDirectivePatterns),
-    ...patternErrors(text, "Invasive relationship advice is not allowed", invasiveRelationshipPatterns),
+    ...patternErrors(assertionText, "Invasive relationship advice is not allowed", invasiveRelationshipPatterns),
     ...patternErrors(text, "Paid pressure is not allowed", paidPressurePatterns),
+    ...getCustomerAnswerBoundaryIssues(text).map(
+      (issue) => `Customer-visible implementation detail is not allowed: ${issue}`,
+    ),
   ];
 }
 
@@ -87,6 +99,7 @@ export function validateFortuneAnswerTier(input: {
   answer: FortuneAnswer;
   serviceTier?: ServiceTier;
   evidence: ReadingEvidencePackage;
+  route?: PromptRoute;
 }) {
   if (!input.serviceTier || input.answer.status === "blocked" || input.answer.status === "needs_input") {
     return [];
@@ -100,7 +113,12 @@ export function validateFortuneAnswerTier(input: {
     if (input.answer.actions.length > 1) errors.push("quick requires exactly 1 next action.");
   }
 
-  if (input.serviceTier === "formal" && evidenceRich && input.answer.interpretations.length < 2) {
+  if (
+    input.serviceTier === "formal" &&
+    input.route?.routeReason !== "follow_up" &&
+    evidenceRich &&
+    input.answer.interpretations.length < 2
+  ) {
     errors.push("formal requires at least 2 evidence interpretations when evidence is available.");
   }
 

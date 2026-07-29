@@ -209,12 +209,16 @@ export async function assertDeepReportReady(input: {
 }
 
 export function getDeepReportRequirementsErrorResponse(error: DeepReportRequirementsError) {
+  const requirements = error.requirements.map(({ label, message, href }) => ({
+    label,
+    message,
+    href,
+  }));
+
   return {
     ok: false as const,
-    code: error.code,
-    message: error.message,
-    productCode: error.productCode,
-    requirements: error.requirements,
-    nextAction: error.requirements[0],
+    message: requirements[0]?.message ?? "请先补齐生成深度报告所需的资料。",
+    requirements,
+    nextAction: requirements[0],
   };
 }

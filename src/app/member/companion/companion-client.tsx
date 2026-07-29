@@ -14,12 +14,12 @@ import {
 } from "lucide-react";
 import type {
   CompanionReviewKind,
-  MemberCompanionState,
+  PublicMemberCompanionState,
 } from "@/lib/member-companion-store";
 import { MetricCard, Panel } from "../member-ui";
 
 type CompanionResponse =
-  | { ok: true; state: MemberCompanionState; message?: string }
+  | { ok: true; state: PublicMemberCompanionState; message?: string }
   | { ok: false; message?: string };
 
 function formatDate(value: string | null) {
@@ -43,7 +43,7 @@ function formatDateTime(value: string) {
   });
 }
 
-function getProgress(state: MemberCompanionState) {
+function getProgress(state: PublicMemberCompanionState) {
   if (!state.theme) {
     return { elapsedDays: 0, remainingDays: 30, progress: 0 };
   }
@@ -61,7 +61,7 @@ function getProgress(state: MemberCompanionState) {
   };
 }
 
-export function CompanionClient({ initialState }: { initialState: MemberCompanionState }) {
+export function CompanionClient({ initialState }: { initialState: PublicMemberCompanionState }) {
   const [state, setState] = useState(initialState);
   const [title, setTitle] = useState(initialState.theme?.title ?? "");
   const [context, setContext] = useState(initialState.theme?.context ?? "");
@@ -238,7 +238,7 @@ export function CompanionClient({ initialState }: { initialState: MemberCompanio
         {state.reviews.length > 0 ? (
           <div className="divide-y divide-[#252a32]">
             {state.reviews.map((review) => (
-              <article key={review.id} className="p-5 sm:p-6">
+              <article key={`${review.kind}-${review.createdAt}`} className="p-5 sm:p-6">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                   <div>
                     <p className="text-xs text-[#d8b873]">{review.kind === "weekly" ? "WEEKLY REVIEW" : "30-DAY SUMMARY"}</p>

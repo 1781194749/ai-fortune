@@ -154,6 +154,58 @@ export function assessSafetyRisk(text: string): SafetyAssessment {
   };
 }
 
+const contextualSafetyFollowUpPattern =
+  /^(?:(?:那|那么|然后|所以|还有|再|继续|接着|具体|详细|展开|直接)?(?:该|要|能|可以|应该)?(?:怎么|如何)(?:做|办|处理)?|(?:给我|说下|讲下|告诉我)?(?:具体)?(?:步骤|方法|办法|细节)|继续(?:说|讲)?|接着(?:说|讲)?|然后呢|那接下来呢|为什么|可以吗|行吗)[？?。!！]*$/i;
+const contextualSafetyOperationalPattern =
+  /(?:几点|什么时候|什么时间|哪里|哪个地点|哪条路|怎么去|怎么联系|换个号|小号|匿名|不被发现|不容易被发现|避开|躲开|偷偷|定位|蹲点|守着|等(?:他|她)|盯着|监视|跟着|联系|见面|步骤|方法|办法|细节)/i;
+const contextualSafetyLeadPattern = /^(?:那|那么|然后|接着|继续|再|如果|这样|这种|换个|还有|所以)/;
+const explicitSafetyTopicShiftPattern =
+  /(?:换个话题|不聊这个了|先不说这个|结束这个话题|我(?:现在|今天).{0,12}(?:安全|没事|好多了|冷静了).{0,18}(?:想|要|改|聊|问)|(?:我想|我们|来|改成|转而)(?:聊|看看|问问|讨论).{0,12}(?:工作|事业|职业|学习|考试|产品|设计|生日|礼物|旅行|做饭|运动|娱乐))/;
+
+function isContextualSafetyFollowUp(text: string) {
+  const normalized = text.trim();
+  return contextualSafetyFollowUpPattern.test(normalized) ||
+    contextualSafetyOperationalPattern.test(normalized) ||
+    (normalized.length <= 48 && contextualSafetyLeadPattern.test(normalized));
+}
+
+function explicitlyChangesSafetyTopic(text: string) {
+  return explicitSafetyTopicShiftPattern.test(text.trim());
+}
+
+export function buildSafetyAssessmentText(
+  question: string,
+  previousUserMessages: string[],
+) {
+  const current = question.trim();
+
+  if (
+    assessSafetyRisk(current).blocked ||
+    explicitlyChangesSafetyTopic(current) ||
+    !isContextualSafetyFollowUp(current)
+  ) {
+    return current;
+  }
+
+  const recentContext: string[] = [];
+  let riskyPrevious: string | null = null;
+
+  for (const message of previousUserMessages.slice(-6).toReversed()) {
+    const previous = message.trim();
+    if (!previous) continue;
+    if (explicitlyChangesSafetyTopic(previous)) break;
+    recentContext.unshift(previous);
+    if (assessSafetyRisk(previous).blocked) {
+      riskyPrevious = previous;
+      break;
+    }
+  }
+
+  return riskyPrevious
+    ? `近期高风险上下文：${recentContext.join("\n")}` + `\n当前追问：${current}`
+    : current;
+}
+
 export async function assessSafetyRiskWithModeration(text: string) {
   const deterministic = assessSafetyRisk(text);
   if (deterministic.blocked) {
@@ -218,12 +270,12 @@ export function buildSafetyFortuneAnswer(assessment: SafetyAssessment): FortuneA
   const minorRisk = categories.has("minor");
   const response = crisisRisk
     ? {
-        meaning: "先处理现实安全、可信任支持和可执行的保护动作。",
+        meaning: "请先告诉我：你现在是否正处于立即危险，是否已经有具体计划，或手边有可伤害自己或他人的物品。",
         actionLabel: "先确保当下安全",
-        actionDetail: "暂停命理判断，离开可能升级的环境，并联系身边可信任的人、专业支持或当地紧急服务。",
+        actionDetail: "把可能用于伤害的物品移远或交给可信任的人，离开危险地点，不要独处，并立即联系身边可信任的人、专业支持或当地紧急服务。",
         realityChecks: [
-          "确认自己和他人此刻是否处于安全环境",
-          "如果存在即时危险，请立即联系当地紧急服务或身边可信任的人",
+          "确认是否已有具体计划、可用手段，或已经无法保证自己和他人的安全",
+          "只要任一项为是，立即联系当地紧急服务，并请可信任的人到场陪同",
         ],
         followUps: ["帮我先把情绪稳定下来", "帮我整理一个安全计划", "我可以联系谁获得支持"],
         notice: "本轮不进行命理推演，也不会建议为人身安全或危机场景付费。",

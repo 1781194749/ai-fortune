@@ -118,27 +118,6 @@ function economicsForMembership(product: Product): LaunchUnitEconomicsProduct {
   }
 
   const revenuePerGrantedStarCents = product.priceCents / product.starGrant;
-  const yearlyCadenceRisk =
-    product.code === "yearly" &&
-    (product.durationDays ?? 0) >= 365 &&
-    product.starGrant < 12 * (membershipProducts.find((item) => item.code === "monthly")?.starGrant ?? 0);
-
-  if (yearlyCadenceRisk) {
-    return {
-      code: product.code,
-      name: product.name,
-      type: product.type,
-      status: "warning",
-      priceLabel: formatPrice(product.priceCents, product.currency),
-      priceCents: product.priceCents,
-      starGrant: product.starGrant,
-      durationDays: product.durationDays,
-      revenuePerGrantedStarCents,
-      issue: "年度会员文案偏向按月发放，但当前支付链路只会一次性发放 starGrant。",
-      action: "确认年费星力是一次性发放还是按月发放；若按月发放，需要补自动发放或运营发放规则。",
-    };
-  }
-
   return {
     code: product.code,
     name: product.name,
@@ -295,7 +274,7 @@ function statusFromSummary(summary: ReturnType<typeof summarize>) {
     return {
       status: "warning" as const,
       label: `单位经济有 ${summary.warning} 个待复核项`,
-      detail: "产品定价和收费链路基本可用，但 AI 成本样本、年度会员发放节奏或成本金额仍需复核。",
+      detail: "产品定价和收费链路基本可用，但 AI 成本样本或成本金额仍需复核。",
       action: "上线前跑真实样本并补齐 costCents，确认会员发放节奏与页面承诺一致。",
     };
   }

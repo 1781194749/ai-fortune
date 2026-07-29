@@ -4,9 +4,16 @@ import {
   updateChatSessionTitle,
 } from "@/lib/ai-session-store";
 import { getSession } from "@/lib/session";
-import type { ChatAnswerShape, ChatConclusion } from "@/lib/ai-orchestrator";
-import type { FortuneAnswer } from "@/lib/prompts/contracts";
-import { isChatServiceMode } from "@/lib/chat-service";
+import type { ChatAnswerShape } from "@/lib/ai-orchestrator";
+import {
+  isChatServiceIntent,
+  isChatServiceMode,
+} from "@/lib/chat-service";
+import { recoverPendingChatDeliveries } from "@/lib/chat-turn-service";
+import { sanitizeCustomerAnswer } from "@/lib/product-identity";
+import { publicApiErrorResponse } from "@/lib/public-api-error";
+
+type SessionRouteContext = { params: Promise<{ sessionId: string }> };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -21,46 +28,37 @@ const answerShapes = new Set<ChatAnswerShape>([
   "single_reading",
   "general_clarify",
 ]);
-const answerStatuses = new Set<FortuneAnswer["status"]>([
-  "ok",
-  "needs_input",
-  "blocked",
-  "fallback",
-]);
-
 function readHistoryMetadata(toolResult: unknown) {
   if (!isRecord(toolResult)) {
-    return { intent: null, toolNames: [] as string[] };
+    return {
+      answerShape: undefined,
+      publicMetadata: {
+        method: "general" as const,
+        showRitual: false,
+      },
+    };
   }
 
-  const intent = typeof toolResult.intent === "string" ? toolResult.intent : null;
-  const toolNames = Array.isArray(toolResult.toolCalls)
-    ? toolResult.toolCalls
-        .map((tool) => (isRecord(tool) && typeof tool.name === "string" ? tool.name : ""))
-        .filter(Boolean)
-    : [];
+  const method = isChatServiceIntent(toolResult.intent) ? toolResult.intent : "general";
   const serviceMode = isChatServiceMode(toolResult.serviceMode) ? toolResult.serviceMode : undefined;
   const answerShape = typeof toolResult.answerShape === "string" && answerShapes.has(toolResult.answerShape as ChatAnswerShape)
     ? toolResult.answerShape as ChatAnswerShape
     : undefined;
-  const answerStatus = typeof toolResult.answerStatus === "string" && answerStatuses.has(toolResult.answerStatus as FortuneAnswer["status"])
-    ? toolResult.answerStatus as FortuneAnswer["status"]
-    : undefined;
-  const conclusion = isRecord(toolResult.conclusion) &&
-    typeof toolResult.conclusion.verdict === "string" &&
-    Array.isArray(toolResult.conclusion.reasons) &&
-    typeof toolResult.conclusion.risk === "string" &&
-    typeof toolResult.conclusion.nextStep === "string" &&
-    Array.isArray(toolResult.conclusion.followUps)
-    ? toolResult.conclusion as ChatConclusion
-    : undefined;
-
-  return { intent, toolNames, serviceMode, answerShape, answerStatus, conclusion };
+  return {
+    answerShape,
+    publicMetadata: {
+      method,
+      serviceMode,
+      showRitual: answerShape !== "identity_boundary" &&
+        answerShape !== "missing_info" &&
+        answerShape !== "safety_boundary",
+    },
+  };
 }
 
-export async function GET(
+async function getChatSessionResponse(
   _request: Request,
-  context: { params: Promise<{ sessionId: string }> },
+  context: SessionRouteContext,
 ) {
   const session = await getSession();
 
@@ -69,6 +67,11 @@ export async function GET(
   }
 
   const { sessionId } = await context.params;
+  await recoverPendingChatDeliveries({
+    userId: session.userId,
+    sessionId,
+    take: 1,
+  });
   const chat = await getChatSessionDetail({
     userId: session.userId,
     sessionId,
@@ -86,15 +89,27 @@ export async function GET(
         title: chat.title,
         createdAt: chat.createdAt,
         updatedAt: chat.updatedAt,
-        messages: chat.messages.map((message) => ({
-          id: message.id,
-          role: message.role,
-          content: message.content,
-          createdAt: message.createdAt,
-          ...(message.role === "assistant"
+        messages: chat.messages.map((message, index) => {
+          const metadata = message.role === "assistant"
             ? readHistoryMetadata(message.toolResult)
-            : {}),
-        })),
+            : null;
+
+          return {
+            id: message.id,
+            role: message.role,
+            content: message.role === "assistant"
+              ? sanitizeCustomerAnswer(
+                  message.content,
+                  metadata?.answerShape,
+                  chat.messages[index - 1]?.role === "user"
+                    ? chat.messages[index - 1].content
+                    : null,
+                )
+              : message.content,
+            createdAt: message.createdAt,
+            ...(metadata ? metadata.publicMetadata : {}),
+          };
+        }),
       },
     },
     {
@@ -105,9 +120,21 @@ export async function GET(
   );
 }
 
-export async function PATCH(
+export async function GET(request: Request, context: SessionRouteContext) {
+  try {
+    return await getChatSessionResponse(request, context);
+  } catch (error) {
+    return publicApiErrorResponse(error, {
+      context: "read chat session",
+      message: "对话记录暂时无法读取，请稍后重试。",
+      status: 503,
+    });
+  }
+}
+
+async function updateChatSessionResponse(
   request: Request,
-  context: { params: Promise<{ sessionId: string }> },
+  context: SessionRouteContext,
 ) {
   const session = await getSession();
 
@@ -139,9 +166,21 @@ export async function PATCH(
   return Response.json({ ok: true, chat });
 }
 
-export async function DELETE(
+export async function PATCH(request: Request, context: SessionRouteContext) {
+  try {
+    return await updateChatSessionResponse(request, context);
+  } catch (error) {
+    return publicApiErrorResponse(error, {
+      context: "update chat session",
+      message: "对话标题暂时无法更新，请稍后重试。",
+      status: 503,
+    });
+  }
+}
+
+async function deleteChatSessionResponse(
   _request: Request,
-  context: { params: Promise<{ sessionId: string }> },
+  context: SessionRouteContext,
 ) {
   const session = await getSession();
 
@@ -167,4 +206,16 @@ export async function DELETE(
   }
 
   return Response.json({ ok: true });
+}
+
+export async function DELETE(request: Request, context: SessionRouteContext) {
+  try {
+    return await deleteChatSessionResponse(request, context);
+  } catch (error) {
+    return publicApiErrorResponse(error, {
+      context: "delete chat session",
+      message: "对话暂时无法删除，请稍后重试。",
+      status: 503,
+    });
+  }
 }

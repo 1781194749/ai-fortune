@@ -1,5 +1,5 @@
-import { closeMockOrder } from "@/lib/mock-payment-store";
-import { isDatabaseUnavailableError } from "@/lib/prisma";
+import { closeMockOrder, getOrderDisplay } from "@/lib/mock-payment-store";
+import { publicApiErrorResponse } from "@/lib/public-api-error";
 import { getSession } from "@/lib/session";
 
 export async function POST(
@@ -20,12 +20,12 @@ export async function POST(
       return Response.json({ ok: false, message: "订单不存在或已无法取消。" }, { status: 409 });
     }
 
-    return Response.json({ ok: true, order });
+    return Response.json({ ok: true, order: getOrderDisplay(order) });
   } catch (error) {
-    if (isDatabaseUnavailableError(error)) {
-      return Response.json({ ok: false, code: error.code, message: error.message }, { status: error.status });
-    }
-
-    throw error;
+    return publicApiErrorResponse(error, {
+      context: "cancel mock payment order",
+      message: "订单取消失败，请稍后重试。",
+      unavailableMessage: "订单服务暂时不可用，请稍后重试。",
+    });
   }
 }

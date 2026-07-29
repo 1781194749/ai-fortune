@@ -60,7 +60,7 @@ export function ToolPageShell({
               <MessageCircle size={15} aria-hidden="true" />
               Chat
             </Link>
-            <Link href="/member" className="inline-flex h-10 items-center gap-1 rounded-full border border-[#34352e] bg-[#11120f] px-4 text-[#aaa294] transition hover:border-[#c9a35f]/45 hover:text-[#efd9a6]">
+            <Link href="/member/profile" className="inline-flex h-10 items-center gap-1 rounded-full border border-[#34352e] bg-[#11120f] px-4 text-[#aaa294] transition hover:border-[#c9a35f]/45 hover:text-[#efd9a6]">
               <LayoutDashboard size={15} aria-hidden="true" />
               个人中心
               <ChevronRight size={14} aria-hidden="true" />

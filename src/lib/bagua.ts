@@ -450,11 +450,7 @@ export function generateBagua(input: BaguaInput, readingSeed = "") {
     topic,
   });
   const choiceDirection = topic === "选择"
-    ? /(?:A|Ａ).*?(?:B|Ｂ)|(?:B|Ｂ).*?(?:A|Ａ)/i.test(input.question)
-      ? `选择方向：当前更适合优先验证选项 ${bytes[7] % 2 === 0 ? "A" : "B"}，先用一个可回滚的小动作确认资源、边界和真实反馈；若关键条件不满足，再回到另一项比较。`
-      : ["同气", "内生外"].includes(mainHexagram.relation)
-        ? "选择方向：当前更适合先推进并做低成本验证，再根据外部反馈加码。"
-        : "选择方向：当前更适合先补信息、设停止条件，再决定是否推进。"
+    ? "选择提示：本次数字起卦只用于观察当前时机、阻力与变化条件；没有逐项对应两个选项的卦象证据时，不按选项字母或排列顺序强行选边。"
     : undefined;
 
   return {
@@ -471,7 +467,8 @@ export function generateBagua(input: BaguaInput, readingSeed = "") {
     oppositeHexagram,
     reversedHexagram,
     audit: {
-      method: "six-line-hash",
+      method: "deterministic-digital-casting",
+      note: "以问题与会话种子生成六爻及一个动爻；动爻文本是爻位提示，不等同于传统蓍草、铜钱起卦或《周易》原爻辞。",
       hexagramTableSize: hexagrams.length,
       hasFullHexagramTable: hexagrams.length === 64,
     },

@@ -512,7 +512,7 @@ function buildChannel(input: {
         : "当前没有该渠道的真实支付订单记录。",
       action: latestOrder
         ? "保留订单号、商品、金额和支付渠道截图。"
-        : "用正式域名登录会员页，选择体验卡或月度会员创建一笔小额真实订单。",
+        : "用正式域名登录会员页，选择轻享月卡创建一笔小额真实订单。",
       evidence: "Order(provider=ALIPAY/WECHAT_PAY) 中出现 PENDING 或 PAID 订单。",
     }),
     item({
@@ -560,7 +560,7 @@ function buildChannel(input: {
           ? entitlementTransaction
             ? `已发放 ${entitlementTransaction.amount} 星力，到账后余额 ${entitlementTransaction.balanceAfter}。`
             : `${latestPaidOrder.productName} 应发放 ${product?.starGrant ?? 0} 星力，但未找到钱包 GRANT 流水。`
-          : `${latestPaidOrder.productName} 不是会员/星力发放商品，建议再用体验卡或月度会员验收权益到账。`
+          : `${latestPaidOrder.productName} 不是月卡/权益发放商品，建议再用轻享月卡验收权益到账。`
         : "当前没有可核对权益的支付成功订单。",
       action: latestPaidOrder
         ? entitlementExpected

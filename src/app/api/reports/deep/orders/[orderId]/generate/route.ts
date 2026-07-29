@@ -7,7 +7,8 @@ import {
 } from "@/lib/deep-report-readiness";
 import { createDeepReportForPaidOrder } from "@/lib/deep-report-job";
 import { getMockOrder, getOrderDisplay } from "@/lib/mock-payment-store";
-import { isDatabaseUnavailableError } from "@/lib/prisma";
+import { publicApiErrorResponse } from "@/lib/public-api-error";
+import { toCustomerReport } from "@/lib/report-public-view";
 import { getSession } from "@/lib/session";
 
 export async function POST(
@@ -56,7 +57,7 @@ export async function POST(
       {
         ok: true,
         order: getOrderDisplay(order),
-        report: result.report,
+        report: toCustomerReport(result.report),
         reused: result.reused,
         queued: result.queued,
       },
@@ -69,15 +70,11 @@ export async function POST(
       });
     }
 
-    if (isDatabaseUnavailableError(error)) {
-      return Response.json(
-        { ok: false, code: error.code, message: error.message },
-        { status: error.status },
-      );
-    }
-
-    const message = error instanceof Error ? error.message : "深度报告任务创建失败。";
-
-    return Response.json({ ok: false, message }, { status: 503 });
+    return publicApiErrorResponse(error, {
+      context: "generate report for paid order",
+      message: "深度报告生成失败，请稍后重试。",
+      status: 503,
+      unavailableMessage: "报告服务暂时不可用，请稍后重试。",
+    });
   }
 }

@@ -26,6 +26,8 @@ async function getPurchaseIntent(returnTo: string) {
     name: product.name,
     priceLabel: formatPrice(product.priceCents, product.currency),
     durationDays: product.durationDays,
+    chatQuota: product.chatQuota,
+    profileLimit: product.profileLimit,
     starGrant: product.starGrant,
     reportQuota: product.reportQuota,
     palmQuota: product.palmQuota,
@@ -94,7 +96,7 @@ export default async function LoginPage({
               : purchaseIntent
               ? `登录后继续购买${purchaseIntent.name}`
               : chatIntent
-                ? "登录后直接进入 Chat"
+                ? "先建档，再开始问事"
                 : "登录后继续你的推演"}
           </h2>
           <p className="mt-5 leading-8 text-[#b9ad99]">
@@ -105,7 +107,7 @@ export default async function LoginPage({
               : purchaseIntent
               ? "你的套餐选择会被保留，登录成功后将回到价格页确认权益并创建订单。"
               : chatIntent
-                ? "使用 Google 邮箱确认账号后，会直接进入 Chat。档案可以在对话中逐步补充，不强制先填表。"
+                ? "新用户确认账号后会立即完成基础资料；已有完整档案的用户会直接进入 Chat，不会重复填写。"
                 : "使用 Google 邮箱登录。你的命理档案、对话、报告和会员权益会与账号同步保存。"}
           </p>
         </div>

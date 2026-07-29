@@ -26,7 +26,7 @@ export function MockPayButton({ orderId, isDeepReport = false }: { orderId: stri
         return;
       }
 
-      window.location.href = data.redirectTo ?? "/member";
+      window.location.href = data.redirectTo ?? "/member/entitlements";
     } catch {
       setMessage("网络连接异常，请稍后重试。");
     } finally {

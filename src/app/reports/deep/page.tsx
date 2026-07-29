@@ -9,6 +9,7 @@ import {
 } from "@/lib/member-entitlements";
 import { getUserMockOrders, getOrderDisplay } from "@/lib/mock-payment-store";
 import { getUserMockReports } from "@/lib/report-store";
+import { toCustomerReport } from "@/lib/report-public-view";
 import { createLoginHref } from "@/lib/return-to";
 import { getSession } from "@/lib/session";
 import { DeepReportClient } from "./deep-report-client";
@@ -48,14 +49,18 @@ export default async function DeepReportsPage({
       (report) =>
         Boolean(report.orderId) || isMemberEntitlementUsage(report, "deep_report"),
     )
-    .map((report) => ({
-      id: report.id,
-      orderId: report.orderId,
-      title: report.title,
-      summary: report.summary,
-      shareSlug: report.shareSlug,
-      status: report.status,
-  }));
+    .map((report) => {
+      const publicReport = toCustomerReport(report);
+
+      return {
+        id: publicReport.id,
+        orderId: report.orderId,
+        title: publicReport.title,
+        summary: publicReport.summary,
+        shareSlug: publicReport.shareSlug,
+        status: publicReport.status,
+      };
+    });
 
   return (
     <ToolPageShell

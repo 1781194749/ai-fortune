@@ -13,23 +13,17 @@ import {
   Upload,
 } from "lucide-react";
 import { getStarCostLabel } from "@/lib/commerce";
+import type { PalmImage as PublicPalmImage } from "@/lib/palm-image-public";
 
 type UploadToken = {
   mode: "qiniu" | "mock";
   key: string;
   token: string;
   uploadUrl: string | null;
-  publicUrl: string;
   expiresAt: string;
 };
 
-export type PalmImage = {
-  id: string;
-  qiniuKey: string;
-  url: string;
-  contentType: string;
-  sizeBytes: number;
-};
+export type PalmImage = PublicPalmImage;
 
 type PalmReport = {
   id: string;
@@ -198,10 +192,8 @@ export function PalmClient({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           key: tokenData.key,
-          url: tokenData.publicUrl,
           contentType: file.type,
           sizeBytes: file.size,
-          originalName: file.name,
           provider: tokenData.mode,
           hash,
         }),

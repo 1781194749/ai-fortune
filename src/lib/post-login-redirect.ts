@@ -1,6 +1,7 @@
 import "server-only";
 
 import { sanitizeReturnTo } from "@/lib/return-to";
+import { getFortuneProfile, hasSavedFortuneProfile } from "@/lib/fortune-profile-store";
 
 function isOnboardingReturnTo(path: string) {
   return (
@@ -12,7 +13,7 @@ function isOnboardingReturnTo(path: string) {
 }
 
 function shouldDefaultToChat(path: string) {
-  return path === "/member" || isOnboardingReturnTo(path);
+  return isOnboardingReturnTo(path);
 }
 
 export async function resolvePostLoginRedirect(input: {
@@ -21,6 +22,15 @@ export async function resolvePostLoginRedirect(input: {
   isNewUser: boolean;
 }) {
   const redirectTo = sanitizeReturnTo(input.returnTo);
+
+  const profile = await getFortuneProfile(input.userId);
+  const hasCompleteProfile = hasSavedFortuneProfile(profile);
+
+  if (input.isNewUser || !hasCompleteProfile) {
+    if (redirectTo === "/chat" || shouldDefaultToChat(redirectTo)) {
+      return "/onboarding";
+    }
+  }
 
   if (shouldDefaultToChat(redirectTo)) {
     return "/chat";

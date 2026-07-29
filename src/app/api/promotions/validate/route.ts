@@ -1,8 +1,9 @@
 import { isProductCode } from "@/lib/commerce";
 import { quotePromotion } from "@/lib/promo-code";
+import { publicApiErrorResponse } from "@/lib/public-api-error";
 import { getSession } from "@/lib/session";
 
-export async function POST(request: Request) {
+async function validatePromotionResponse(request: Request) {
   const session = await getSession();
 
   if (!session) {
@@ -37,3 +38,14 @@ export async function POST(request: Request) {
   return Response.json(quote);
 }
 
+export async function POST(request: Request) {
+  try {
+    return await validatePromotionResponse(request);
+  } catch (error) {
+    return publicApiErrorResponse(error, {
+      context: "validate promotion code",
+      message: "优惠码验证失败，请稍后重试。",
+      unavailableMessage: "优惠服务暂时不可用，请稍后重试。",
+    });
+  }
+}

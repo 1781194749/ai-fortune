@@ -78,6 +78,8 @@ function readConfig(value: unknown): ProductRuntimeConfig | undefined {
     priceCents: readNonNegativeInteger(value.priceCents),
     starGrant: readNonNegativeInteger(value.starGrant),
     durationDays: readNonNegativeInteger(value.durationDays),
+    chatQuota: readNonNegativeInteger(value.chatQuota),
+    profileLimit: readNonNegativeInteger(value.profileLimit),
     reportQuota: readNonNegativeInteger(value.reportQuota),
     palmQuota: readNonNegativeInteger(value.palmQuota),
     highlighted: readBoolean(value.highlighted),
@@ -95,6 +97,8 @@ function configToOverride(config: ProductRuntimeConfig): ProductRuntimeOverride 
     priceCents: config.priceCents,
     starGrant: config.starGrant,
     durationDays: config.durationDays,
+    chatQuota: config.chatQuota,
+    profileLimit: config.profileLimit,
     reportQuota: config.reportQuota,
     palmQuota: config.palmQuota,
     highlighted: config.highlighted,
@@ -180,7 +184,8 @@ export async function getProductRuntimeConfigMap(input: { forceRefresh?: boolean
 
 export async function getRuntimeProduct(code: ProductCode) {
   await getProductRuntimeConfigMap();
-  return getProduct(code);
+  const product = getProduct(code);
+  return product?.purchasable === false ? undefined : product;
 }
 
 export async function getRuntimeMembershipProducts() {
@@ -234,6 +239,8 @@ export async function saveProductRuntimeConfig(input: {
       priceCents: input.config?.priceCents,
       starGrant: input.config?.starGrant,
       durationDays: input.config?.durationDays,
+      chatQuota: input.config?.chatQuota,
+      profileLimit: input.config?.profileLimit,
       reportQuota: input.config?.reportQuota,
       palmQuota: input.config?.palmQuota,
       highlighted: input.config?.highlighted,

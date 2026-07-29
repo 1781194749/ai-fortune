@@ -54,32 +54,32 @@ export const productModules = [
 
 export const pricingPlans = [
   {
-    name: "体验卡",
-    price: "9.9",
-    unit: "7 天",
+    name: "免费版",
+    price: "0",
+    unit: "月",
     highlight: false,
-    features: ["80 星力", "30 次轻问答", "1 次手相浅析", "3 次塔罗"],
+    features: ["10 次问答", "最多 3 份档案", "基础档案记忆", "每日单牌塔罗"],
   },
   {
-    name: "月度会员",
-    price: "29",
+    name: "轻享月卡",
+    price: "19.9",
+    unit: "月",
+    highlight: false,
+    features: ["30 次问答", "最多 10 份档案", "1 份深度报告", "1 次手相"],
+  },
+  {
+    name: "进阶月卡",
+    price: "69.9",
+    unit: "月",
+    highlight: false,
+    features: ["100 次问答", "最多 30 份档案", "4 份深度报告", "6 次手相"],
+  },
+  {
+    name: "尊享月卡",
+    price: "99",
     unit: "月",
     highlight: true,
-    features: ["350 星力", "3 次手相", "2 份简版报告", "基础档案记忆"],
-  },
-  {
-    name: "进阶会员",
-    price: "69",
-    unit: "月",
-    highlight: false,
-    features: ["1200 星力", "10 次手相", "6 份深度报告", "长期记忆"],
-  },
-  {
-    name: "年度会员",
-    price: "399",
-    unit: "年",
-    highlight: false,
-    features: ["全年 5400 星力", "年度运势", "12 份主题报告额度", "全年档案"],
+    features: ["200 次问答", "最多 100 份档案", "8 份深度报告", "阶段陪伴与月度总结"],
   },
 ] as const;
 

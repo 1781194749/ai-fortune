@@ -111,6 +111,12 @@ export async function isAdminUserId(userId: string) {
   return adminEmails.includes(normalizeEmail(email) ?? "");
 }
 
+export async function isAdminSession(
+  session: Pick<NonNullable<Awaited<ReturnType<typeof getSession>>>, "userId" | "adminEligible">,
+) {
+  return session.adminEligible === true && isAdminUserId(session.userId);
+}
+
 export async function getAdminAccess(searchParams?: AdminSearchParams) {
   // Keep admin access decisions request-scoped without forcing a session/database read first.
   await cookies();
@@ -152,7 +158,7 @@ export async function getAdminAccess(searchParams?: AdminSearchParams) {
     } as const;
   }
 
-  const authorized = await isAdminUserId(session.userId);
+  const authorized = await isAdminSession(session);
 
   return {
     enabled: true,

@@ -45,7 +45,7 @@ export function HomeConversionPreview() {
               <span className="text-[#79b8b1]">木旺 · 金弱</span>
             </div>
             <div className="flex flex-wrap gap-2 pt-1">
-              {["事业", "选择", "年度运势"].map((item) => (
+              {["事业", "人生选择", "年度运势"].map((item) => (
                 <span key={item} className="rounded-full border border-[#323128] px-2.5 py-1 text-[#aaa294]">
                   {item}
                 </span>

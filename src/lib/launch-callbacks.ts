@@ -189,7 +189,7 @@ export function getLaunchCallbackChecklist(env: Env = process.env) {
       configName: "Authorized JavaScript origin",
       value: appUrl,
       detail: "Google Web OAuth Client 的线上来源，需要与正式 APP_URL 保持一致。",
-      action: "在 Google Cloud Console 的 OAuth Client 中添加该线上来源，并保持 APP_URL 指向同一 HTTPS 域名。",
+      action: "在 Google Cloud Console 的 OAuth Client 中添加该线上来源；本地调试可在同一个 Client 保留 http://localhost:3000。",
       evidence: "Google OAuth Client 配置页截图；线上登录入口能跳转到 accounts.google.com。",
       status: itemStatus({
         baseStatus,
@@ -208,7 +208,7 @@ export function getLaunchCallbackChecklist(env: Env = process.env) {
       value: `${appUrl}/api/auth/google/callback`,
       method: "GET",
       detail: "服务端 Google OAuth 登录使用该地址接收 code，并用同一个 redirect_uri 交换 token。",
-      action: "在 Google Cloud Console 的 OAuth Client 中添加该线上重定向 URI；本项目运行时会优先用 APP_URL 生成这个地址。",
+      action: "在 Google Cloud Console 的 OAuth Client 中添加该线上重定向 URI；本地调试可同时保留 http://localhost:3000/api/auth/google/callback。",
       evidence: "Google OAuth Client 配置页截图；线上 Google 邮箱登录完成后能回到 Chat 或购买意图页。",
       status: itemStatus({
         baseStatus,

@@ -1,5 +1,6 @@
 import { getMockReport } from "@/lib/report-store";
-import { isDatabaseUnavailableError } from "@/lib/prisma";
+import { publicApiErrorResponse } from "@/lib/public-api-error";
+import { toCustomerReport } from "@/lib/report-public-view";
 import { getSession } from "@/lib/session";
 
 export async function GET(
@@ -22,16 +23,13 @@ export async function GET(
 
     return Response.json({
       ok: true,
-      report,
+      report: toCustomerReport(report),
     });
   } catch (error) {
-    if (isDatabaseUnavailableError(error)) {
-      return Response.json(
-        { ok: false, code: error.code, message: error.message },
-        { status: error.status },
-      );
-    }
-
-    throw error;
+    return publicApiErrorResponse(error, {
+      context: "read customer report",
+      message: "报告读取失败，请稍后重试。",
+      unavailableMessage: "报告服务暂时不可用，请稍后重试。",
+    });
   }
 }

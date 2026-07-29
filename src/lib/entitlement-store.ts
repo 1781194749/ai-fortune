@@ -615,6 +615,42 @@ export async function grantMembershipEntitlementsForOrder(input: {
   );
 }
 
+export async function grantMembershipEntitlementsForOrderInTransaction(
+  tx: EntitlementDb,
+  input: {
+    userId: string;
+    orderId: string;
+    productCode: ProductCode;
+  },
+) {
+  const grants = getMembershipQuotaGrants(input.productCode);
+  const transactions: MockEntitlementTransaction[] = [];
+
+  for (const grant of grants) {
+    const result = await createDbEntitlementTransactionInTransaction(tx, {
+      userId: input.userId,
+      kind: grant.kind,
+      type: "GRANT",
+      amount: grant.amount,
+      reason: grant.reason,
+      orderId: input.orderId,
+      idempotencyKey: `membership:${input.orderId}:${grant.kind}:grant`,
+      metadata: {
+        source: "membership_payment",
+        productCode: input.productCode,
+      },
+    });
+
+    if (!result.ok) {
+      throw new Error(`Unable to grant ${grant.kind} entitlement for order ${input.orderId}.`);
+    }
+
+    transactions.push(result.transaction);
+  }
+
+  return transactions;
+}
+
 export async function revokeMembershipEntitlementsForOrder(input: {
   userId: string;
   orderId: string;

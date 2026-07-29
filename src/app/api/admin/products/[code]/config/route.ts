@@ -89,6 +89,8 @@ export async function PATCH(
       priceCents: parseNonNegativeInteger(body.priceCents, "priceCents"),
       starGrant: parseNonNegativeInteger(body.starGrant, "starGrant"),
       durationDays: parseNonNegativeInteger(body.durationDays, "durationDays"),
+      chatQuota: parseNonNegativeInteger(body.chatQuota, "chatQuota"),
+      profileLimit: parseNonNegativeInteger(body.profileLimit, "profileLimit"),
       reportQuota: parseNonNegativeInteger(body.reportQuota, "reportQuota"),
       palmQuota: parseNonNegativeInteger(body.palmQuota, "palmQuota"),
       description,

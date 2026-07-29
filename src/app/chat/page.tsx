@@ -1,10 +1,11 @@
 import { redirect } from "next/navigation";
 import { getRecentChatSessions } from "@/lib/ai-session-store";
-import { isAdminUserId } from "@/lib/admin-auth";
-import { getFortuneProfile } from "@/lib/fortune-profile-store";
+import { isAdminSession } from "@/lib/admin-auth";
+import { getFortuneProfile, hasSavedFortuneProfile } from "@/lib/fortune-profile-store";
 import { getInviteRewardSummary } from "@/lib/invite-rewards";
 import { createLoginHref } from "@/lib/return-to";
 import { isChatReadingMethod } from "@/lib/chat-service";
+import { recoverPendingChatDeliveries } from "@/lib/chat-turn-service";
 import { getSession } from "@/lib/session";
 import { ChatClient } from "./chat-client";
 
@@ -58,16 +59,26 @@ export default async function ChatPage({
     redirect(createLoginHref(returnTo));
   }
 
+  await recoverPendingChatDeliveries({ userId: session.userId, take: 12 });
   const [recentChats, profile, canAccessAdmin, inviteRewardSummary] = await Promise.all([
     getRecentChatSessions(session.userId, 12),
     getFortuneProfile(session.userId),
-    isAdminUserId(session.userId),
+    isAdminSession(session),
     getInviteRewardSummary(session.userId),
   ]);
+
+  if (!hasSavedFortuneProfile(profile)) {
+    redirect("/onboarding");
+  }
 
   return (
     <ChatClient
       initialBalance={session.starBalance}
+      initialQuota={{
+        total: session.chatQuota ?? 10,
+        used: session.chatUsed ?? 0,
+        remaining: Math.max(0, (session.chatQuota ?? 10) - (session.chatUsed ?? 0)),
+      }}
       initialRecentChats={recentChats}
       initialReadingMethod={initialReadingMethod}
       initialQuestion={initialQuestion}

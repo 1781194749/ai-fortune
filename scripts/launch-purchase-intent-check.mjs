@@ -26,10 +26,9 @@ const requiredFiles = [
 ];
 
 const expectedPlans = [
-  { code: "trial_7d", name: "体验卡", priceCents: 990 },
-  { code: "monthly", name: "月度会员", priceCents: 2900 },
-  { code: "pro_monthly", name: "进阶会员", priceCents: 6900 },
-  { code: "yearly", name: "年度会员", priceCents: 39900 },
+  { code: "monthly", name: "轻享月卡", priceCents: 1990 },
+  { code: "pro_monthly", name: "进阶月卡", priceCents: 6990 },
+  { code: "premium_monthly", name: "尊享月卡", priceCents: 9900 },
 ];
 
 function parseArgs(argv) {
@@ -210,12 +209,11 @@ function checkCommerceCatalog(result, root) {
     content,
     tokens: [
       "membershipTierByProduct",
-      "trial_7d: \"TRIAL\"",
       "monthly: \"MONTHLY\"",
       "pro_monthly: \"PRO\"",
-      "yearly: \"YEARLY\"",
+      "premium_monthly: \"YEARLY\"",
     ],
-    readyDetail: "四档会员都能映射到用户权益档位。",
+    readyDetail: "三档付费月卡都能映射到用户权益档位，免费版由注册流程发放。",
     readyAction: "保留映射，用于支付成功后的权益发放。",
     blockingAction: "补齐 membershipTierByProduct，确保订单付款后能发会员权益。",
   });
@@ -297,7 +295,8 @@ function checkLoginPage(result, root) {
       "登录后继续购买",
       "你的套餐选择会被保留",
       "priceLabel",
-      "starGrant",
+      "chatQuota",
+      "profileLimit",
       "reportQuota",
       "palmQuota",
     ],
@@ -319,8 +318,9 @@ function checkLoginForm(result, root) {
     tokens: [
       "type PurchaseIntent",
       "已保留套餐：{purchaseIntent.name}",
-      "{purchaseIntent.priceLabel} / {purchaseIntent.durationDays} 天",
-      "{purchaseIntent.starGrant} 星力",
+      "{purchaseIntent.priceLabel} / 月",
+      "{purchaseIntent.chatQuota} 次问答",
+      "最多 {purchaseIntent.profileLimit} 份档案",
       "{purchaseIntent.reportQuota} 份报告额度",
       "{purchaseIntent.palmQuota} 次手相额度",
       "returnToLabel(returnTo, purchaseIntent)",
@@ -362,7 +362,7 @@ function checkGoogleRoute(result, root) {
     tokens: [
       "isGoogleAuthConfigured",
       "sanitizeReturnTo(requestUrl.searchParams.get(\"returnTo\")",
-      "googleError=not_configured",
+      "googleError=unavailable",
       "attemptCookie",
       "returnTo",
       "getGoogleRedirectUri",
@@ -465,11 +465,11 @@ async function runRuntimeChecks(result, input) {
     const pricingReady =
       pricingResponse.status === 200 &&
       pricingText.includes("已选择套餐") &&
-      pricingText.includes("月度会员") &&
-      pricingText.includes("¥29") &&
-      pricingText.includes("350 星力") &&
-      pricingText.includes("2 份报告额度") &&
-      pricingText.includes("3 次手相额度") &&
+      pricingText.includes("轻享月卡") &&
+      pricingText.includes("¥19.9") &&
+      pricingText.includes("30 次问答") &&
+      pricingText.includes("1 份深度报告额度") &&
+      pricingText.includes("1 次手相分析额度") &&
       pricingText.includes("已选择") &&
       pricingText.includes("登录后继续购买");
 
@@ -477,10 +477,10 @@ async function runRuntimeChecks(result, input) {
       id: "runtime-pricing-monthly-intent",
       label: "/pricing?intent=monthly",
       ready: pricingReady,
-      readyDetail: "价格页能渲染月度会员购买意图、权益和登录购买入口。",
-      blockingDetail: `status=${pricingResponse.status}, selected=${pricingText.includes("已选择套餐")}, plan=${pricingText.includes("月度会员")}, price=${pricingText.includes("¥29")}, stars=${pricingText.includes("350 星力")}`,
+      readyDetail: "价格页能渲染轻享月卡购买意图、权益和登录购买入口。",
+      blockingDetail: `status=${pricingResponse.status}, selected=${pricingText.includes("已选择套餐")}, plan=${pricingText.includes("轻享月卡")}, price=${pricingText.includes("¥19.9")}, quota=${pricingText.includes("30 次问答")}`,
       readyAction: "保留价格页意图入口。",
-      blockingAction: "检查 pricing 页面 selectedPlan 渲染和月度会员权益文案。",
+      blockingAction: "检查 pricing 页面 selectedPlan 渲染和轻享月卡权益文案。",
     });
 
     const plainPricingResponse = await fetchWithTimeout({
@@ -513,20 +513,20 @@ async function runRuntimeChecks(result, input) {
     const loginReady =
       loginResponse.status === 200 &&
       loginText.includes("购买前登录") &&
-      loginText.includes("登录后继续购买月度会员") &&
+      loginText.includes("登录后继续购买轻享月卡") &&
       loginText.includes("已保留套餐") &&
-      loginText.includes("月度会员") &&
-      loginText.includes("¥29") &&
-      loginText.includes("350 星力") &&
-      loginText.includes("2 份报告额度") &&
-      loginText.includes("3 次手相额度");
+      loginText.includes("轻享月卡") &&
+      loginText.includes("¥19.9") &&
+      loginText.includes("30 次问答") &&
+      loginText.includes("最多 10 份档案") &&
+      loginText.includes("1 份报告额度");
 
     addRuntimeCheck(result, {
       id: "runtime-login-retained-monthly-plan",
       label: "/login?returnTo=/pricing?intent=monthly#plans",
       ready: loginReady,
-      readyDetail: "登录页能展示已保留的月度会员套餐和权益。",
-      blockingDetail: `status=${loginResponse.status}, hero=${loginText.includes("购买前登录")}, retained=${loginText.includes("已保留套餐")}, plan=${loginText.includes("月度会员")}, stars=${loginText.includes("350 星力")}`,
+      readyDetail: "登录页能展示已保留的轻享月卡和问答权益。",
+      blockingDetail: `status=${loginResponse.status}, hero=${loginText.includes("购买前登录")}, retained=${loginText.includes("已保留套餐")}, plan=${loginText.includes("轻享月卡")}, quota=${loginText.includes("30 次问答")}`,
       readyAction: "保留登录承接。",
       blockingAction: "检查 LoginPage getPurchaseIntent 和 LoginForm purchaseIntent 渲染。",
     });
@@ -541,7 +541,7 @@ async function runRuntimeChecks(result, input) {
       plainLoginResponse.status === 200 &&
       !plainLoginText.includes("已保留套餐") &&
       plainLoginText.includes("进入 Chat 前登录") &&
-      plainLoginText.includes("登录后直接进入 Chat") &&
+      plainLoginText.includes("先建档，再开始问事") &&
       plainLoginText.includes("Google 邮箱登录");
 
     addRuntimeCheck(result, {
@@ -584,7 +584,7 @@ async function runRuntimeChecks(result, input) {
     const googleReady =
       [301, 302, 303, 307, 308].includes(googleResponse.status) &&
       (googleLocation.includes("accounts.google.com") ||
-        (googleLocation.includes("/login?googleError=not_configured") &&
+        (googleLocation.includes("/login?googleError=unavailable") &&
           googleLocation.includes(encodeURIComponent(monthlyReturnTo))));
 
     addRuntimeCheck(result, {

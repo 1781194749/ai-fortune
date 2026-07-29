@@ -3,6 +3,8 @@ import { checkEntitlement, getResolvedStarCost } from "@/lib/entitlements";
 import { claimDailyExperience } from "@/lib/daily-experience-store";
 import { spendStars } from "@/lib/mock-payment-store";
 import { createMockReport } from "@/lib/report-store";
+import { toCustomerReport } from "@/lib/report-public-view";
+import { publicApiErrorResponse } from "@/lib/public-api-error";
 import {
   buildTarotReading,
   drawTarot,
@@ -16,13 +18,14 @@ import type { FeatureCode } from "@/lib/commerce";
 const spreadToFeature: Record<TarotSpread, FeatureCode> = {
   daily: "tarot_daily",
   three_card: "tarot_three_card",
+  three_month: "tarot_three_card",
   love: "tarot_love",
   decision: "tarot_three_card",
   career: "tarot_three_card",
   celtic_cross: "tarot_love",
 };
 
-export async function POST(request: Request) {
+async function createTarotResponse(request: Request) {
   const session = await getSession();
 
   if (!session) {
@@ -122,7 +125,20 @@ export async function POST(request: Request) {
     steps: ["识别问题类型", "洗牌并抽取牌阵", "解释牌面象征", "生成专属解读"],
     cost,
     balanceAfter: spendResult.nextSession.starBalance,
-    report,
+    report: toCustomerReport(report),
     cards,
   });
+}
+
+export async function POST(request: Request) {
+  try {
+    return await createTarotResponse(request);
+  } catch (error) {
+    return publicApiErrorResponse(error, {
+      context: "create tarot report",
+      message: "本次塔罗解读未能完成，请稍后重试。",
+      status: 503,
+      unavailableMessage: "报告服务暂时不可用，请稍后重试。",
+    });
+  }
 }

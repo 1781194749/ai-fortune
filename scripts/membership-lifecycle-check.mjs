@@ -1,10 +1,17 @@
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 import { Client } from "pg";
+
+for (const filename of [".env", ".env.local"]) {
+  if (existsSync(filename)) {
+    process.loadEnvFile(filename);
+  }
+}
 
 const baseUrl = process.env.BASE_URL ?? "http://localhost:3000";
 const databaseUrl = process.env.DATABASE_URL ?? "postgresql://postgres:postgres@localhost:5432/xuanji_ai?schema=public";
 const testEmail = `membership-lifecycle-${Date.now()}@example.com`;
-const adminEmail = "a1781194749@gmail.com";
+const adminAccessToken = process.env.ADMIN_ACCESS_TOKEN?.trim() ?? "";
 const userId = `email_${createHash("sha256").update(testEmail).digest("hex").slice(0, 24)}`;
 const db = new Client({ connectionString: databaseUrl });
 
@@ -30,9 +37,21 @@ async function request(path, input = {}) {
 }
 
 async function login(email) {
+  const codeResult = await request("/api/auth/email/request", {
+    method: "POST",
+    headers: { "x-xuanji-local-email-auth": "1" },
+    body: { email },
+  });
+  const code = String(codeResult.body?.devCode ?? "");
+
+  assert(
+    codeResult.response.ok && /^\d{6}$/.test(code),
+    `申请开发验证码失败：${codeResult.body?.message ?? codeResult.response.status}`,
+  );
   const { response, body } = await request("/api/auth/email/verify", {
     method: "POST",
-    body: { email, code: "000000", returnTo: "/member" },
+    headers: { "x-xuanji-local-email-auth": "1" },
+    body: { email, code, returnTo: "/member" },
   });
 
   assert(response.ok && body?.ok, `登录失败：${body?.message ?? response.status}`);
@@ -87,7 +106,7 @@ try {
   const firstMembership = await getMembership();
   assert(firstMembership?.tier === "MONTHLY" && firstMembership.isActive, "首次购买后没有开通月度会员。");
   assert(firstMembership.endsAt, "首次购买后没有会员到期时间。");
-  assert(Number(firstMembership.starBalance) === initialBalance + 350, "首次购买星力发放不正确。");
+  assert(Number(firstMembership.starBalance) === initialBalance + 20, "首次购买星力发放不正确。");
   const firstEndsAt = new Date(firstMembership.endsAt).getTime();
 
   const second = await createAndPay(userCookie, "monthly");
@@ -119,14 +138,16 @@ try {
     body: { productCode: "monthly" },
   });
   assert(
-    downgrade.response.status === 409 && downgrade.body?.code === "MEMBERSHIP_DOWNGRADE_BLOCKED",
+    downgrade.response.status === 409 &&
+      downgrade.body?.ok === false &&
+      typeof downgrade.body?.availableAt === "string",
     "高等级会员购买低等级方案时没有被拦截。",
   );
 
-  const adminCookie = await login(adminEmail);
+  assert(adminAccessToken, "缺少 ADMIN_ACCESS_TOKEN，无法执行后台退款验收。");
   const refund = await request(`/api/admin/orders/${upgraded.orderId}/refund`, {
     method: "POST",
-    cookie: adminCookie,
+    headers: { "x-admin-token": adminAccessToken },
     body: { reason: "会员生命周期自动验收" },
   });
   assert(refund.response.ok && refund.body?.ok, `升档订单退款失败：${refund.body?.message}`);
@@ -137,7 +158,7 @@ try {
 
   const duplicateRefund = await request(`/api/admin/orders/${upgraded.orderId}/refund`, {
     method: "POST",
-    cookie: adminCookie,
+    headers: { "x-admin-token": adminAccessToken },
     body: { reason: "会员生命周期重复退款验收" },
   });
   assert(duplicateRefund.response.ok && duplicateRefund.body?.alreadyRefunded, "重复退款没有幂等返回。");

@@ -64,7 +64,36 @@ function configuredAppOrigin() {
   return undefined;
 }
 
+function originFrom(value: string) {
+  try {
+    const parsed = new URL(value);
+
+    if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+      return parsed.origin;
+    }
+  } catch {
+    return undefined;
+  }
+
+  return undefined;
+}
+
+function isLoopbackOrigin(value: string) {
+  const origin = originFrom(value);
+
+  if (!origin) {
+    return false;
+  }
+
+  const hostname = new URL(origin).hostname.toLowerCase();
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1" || hostname === "[::1]";
+}
+
 export function getPublicAppOrigin(fallbackOrigin: string) {
+  if (process.env.NODE_ENV !== "production" && isLoopbackOrigin(fallbackOrigin)) {
+    return originFrom(fallbackOrigin) ?? fallbackOrigin;
+  }
+
   return configuredAppOrigin() ?? fallbackOrigin;
 }
 

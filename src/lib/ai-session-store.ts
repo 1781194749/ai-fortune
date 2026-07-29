@@ -2,6 +2,8 @@ import "server-only";
 
 import { randomUUID } from "crypto";
 import { AiTurnStatus, MessageRole, SessionMode } from "@/generated/prisma/enums";
+import { isChatServiceIntent, type ChatServiceIntent } from "@/lib/chat-service";
+import { sanitizeCustomerAnswer } from "@/lib/product-identity";
 import { assertDatabaseFallbackAllowed, tryPrisma } from "@/lib/prisma";
 import { ensureDbUser } from "@/lib/user-store";
 
@@ -20,12 +22,7 @@ export type RecentChatSession = {
   title: string;
   question: string;
   answer: string;
-  intent: string | null;
-  provider: string | null;
-  model: string | null;
-  toolNames: string[];
-  tokensIn: number | null;
-  tokensOut: number | null;
+  method: ChatServiceIntent;
   createdAt: string;
   updatedAt: string;
 };
@@ -65,6 +62,9 @@ type MemorySession = {
 
 type SessionMessageLike = {
   id?: string;
+  turnId?: string | null;
+  ordinal?: number | null;
+  turn?: { sequence: number } | null;
   role: string;
   content: string;
   toolResult?: unknown;
@@ -126,14 +126,22 @@ function toIsoString(value: Date | string) {
   return value instanceof Date ? value.toISOString() : value;
 }
 
-function readToolNames(toolResult: unknown) {
-  if (!isRecord(toolResult) || !Array.isArray(toolResult.toolCalls)) {
-    return [];
+function compareSessionMessages(a: SessionMessageLike, b: SessionMessageLike) {
+  const createdAtOrder = toIsoString(a.createdAt).localeCompare(toIsoString(b.createdAt));
+
+  if (createdAtOrder !== 0) {
+    return createdAtOrder;
   }
 
-  return toolResult.toolCalls
-    .map((tool) => (isRecord(tool) && typeof tool.name === "string" ? tool.name : ""))
-    .filter(Boolean);
+  if (a.turn && b.turn && a.turn.sequence !== b.turn.sequence) {
+    return a.turn.sequence - b.turn.sequence;
+  }
+
+  if (a.turnId && a.turnId === b.turnId) {
+    return (a.ordinal ?? Number.MAX_SAFE_INTEGER) - (b.ordinal ?? Number.MAX_SAFE_INTEGER);
+  }
+
+  return (a.id ?? "").localeCompare(b.id ?? "");
 }
 
 function normalizeConversationMessage(
@@ -161,7 +169,7 @@ function normalizeConversationMessage(
 
 function normalizeChatSessionDetail(session: SessionLike): ChatSessionDetail {
   const messages = [...session.messages]
-    .sort((a, b) => toIsoString(a.createdAt).localeCompare(toIsoString(b.createdAt)))
+    .sort(compareSessionMessages)
     .map(normalizeConversationMessage)
     .filter((message): message is ChatConversationMessage => Boolean(message));
 
@@ -175,27 +183,29 @@ function normalizeChatSessionDetail(session: SessionLike): ChatSessionDetail {
 }
 
 function normalizeRecentChatSession(session: SessionLike): RecentChatSession {
-  const sortedMessages = [...session.messages].sort((a, b) =>
-    toIsoString(a.createdAt).localeCompare(toIsoString(b.createdAt)),
-  );
+  const sortedMessages = [...session.messages].sort(compareSessionMessages);
   const userMessage = sortedMessages.find((message) => message.role === MessageRole.USER);
   const assistantMessage = [...sortedMessages]
     .reverse()
     .find((message) => message.role === MessageRole.ASSISTANT);
+  const assistantIndex = assistantMessage ? sortedMessages.indexOf(assistantMessage) : -1;
+  const assistantQuestion = assistantIndex > 0
+    ? sortedMessages.slice(0, assistantIndex).findLast((message) => message.role === MessageRole.USER)?.content
+    : undefined;
   const toolResult = assistantMessage?.toolResult;
   const metadata = isRecord(toolResult) ? toolResult : {};
+  const answerShape = typeof metadata.answerShape === "string" ? metadata.answerShape : null;
 
   return {
     id: session.id,
     title: session.title,
     question: userMessage?.content ?? session.title,
-    answer: assistantMessage?.content ?? "",
-    intent: typeof metadata.intent === "string" ? metadata.intent : null,
-    provider: typeof metadata.provider === "string" ? metadata.provider : null,
-    model: typeof metadata.model === "string" ? metadata.model : null,
-    toolNames: readToolNames(toolResult),
-    tokensIn: assistantMessage?.tokensIn ?? null,
-    tokensOut: assistantMessage?.tokensOut ?? null,
+    answer: sanitizeCustomerAnswer(
+      assistantMessage?.content ?? "",
+      answerShape,
+      assistantQuestion,
+    ),
+    method: isChatServiceIntent(metadata.intent) ? metadata.intent : "general",
     createdAt: toIsoString(session.createdAt),
     updatedAt: toIsoString(session.updatedAt),
   };
@@ -341,13 +351,21 @@ export async function getChatSessionDetail(input: {
           where: {
             OR: [
               { turnId: null },
-              { turn: { status: { in: visibleTurnStatuses } } },
+              {
+                turn: {
+                  status: { in: visibleTurnStatuses },
+                  completedAt: { not: null },
+                },
+              },
             ],
           },
           orderBy: [
             { createdAt: "asc" },
             { id: "asc" },
           ],
+          include: {
+            turn: { select: { sequence: true } },
+          },
         },
       },
     });
@@ -380,7 +398,12 @@ export async function getRecentChatSessions(userId: string, limit = 5) {
             role: MessageRole.ASSISTANT,
             OR: [
               { turnId: null },
-              { turn: { status: { in: visibleTurnStatuses } } },
+              {
+                turn: {
+                  status: { in: visibleTurnStatuses },
+                  completedAt: { not: null },
+                },
+              },
             ],
           },
         },
@@ -394,11 +417,19 @@ export async function getRecentChatSessions(userId: string, limit = 5) {
           where: {
             OR: [
               { turnId: null },
-              { turn: { status: { in: visibleTurnStatuses } } },
+              {
+                turn: {
+                  status: { in: visibleTurnStatuses },
+                  completedAt: { not: null },
+                },
+              },
             ],
           },
           orderBy: {
             createdAt: "asc",
+          },
+          include: {
+            turn: { select: { sequence: true } },
           },
         },
       },
@@ -453,11 +484,19 @@ export async function updateChatSessionTitle(input: {
           where: {
             OR: [
               { turnId: null },
-              { turn: { status: { in: visibleTurnStatuses } } },
+              {
+                turn: {
+                  status: { in: visibleTurnStatuses },
+                  completedAt: { not: null },
+                },
+              },
             ],
           },
           orderBy: {
             createdAt: "asc",
+          },
+          include: {
+            turn: { select: { sequence: true } },
           },
         },
       },

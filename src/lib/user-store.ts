@@ -2,7 +2,12 @@ import "server-only";
 
 import { AuthProvider, UserRole, WalletEventType } from "@/generated/prisma/enums";
 import type { Prisma } from "@/generated/prisma/client";
-import { freeStarterStarGrant, type MembershipTierCode } from "@/lib/commerce";
+import {
+  freeChatQuota,
+  freeProfileLimit,
+  freeStarterStarGrant,
+  type MembershipTierCode,
+} from "@/lib/commerce";
 import {
   compareMembershipTiers,
   ensureMembershipStateCurrent,
@@ -17,6 +22,10 @@ import { emailToUserId } from "@/lib/email-auth";
 export type PersistedAccountState = {
   tier: MembershipTierCode;
   starBalance: number;
+  chatQuota: number;
+  chatUsed: number;
+  profileLimit: number;
+  quotaPeriodStart: string;
 };
 
 export type LoginAccountState = PersistedAccountState & {
@@ -120,24 +129,45 @@ export async function ensureDbUser(
 export async function getDbAccountState(
   prisma: UserStoreDb,
   userId: string,
-  fallback: PersistedAccountState = { tier: "FREE", starBalance: 0 },
+  fallback: Partial<PersistedAccountState> = {},
 ) {
   await ensureMembershipStateCurrent(prisma, userId);
-  const [membership, latestWalletEvent] = await Promise.all([
-    prisma.membership.findFirst({
-      where: { userId, isActive: true },
-      orderBy: { updatedAt: "desc" },
-    }),
-    prisma.walletTransaction.findFirst({
-      where: { userId },
-      orderBy: { createdAt: "desc" },
-    }),
-  ]);
+  let membership = await prisma.membership.findFirst({
+    where: { userId, isActive: true },
+    orderBy: { updatedAt: "desc" },
+  });
+
+  if (!membership) {
+    membership = await prisma.membership.create({
+      data: {
+        userId,
+        tier: "FREE",
+        starBalance: fallback.starBalance ?? 0,
+        chatQuota: freeChatQuota,
+        chatUsed: 0,
+        profileLimit: freeProfileLimit,
+        quotaPeriodStart: new Date(),
+        isActive: true,
+      },
+    });
+  }
+
+  const latestWalletEvent = await prisma.walletTransaction.findFirst({
+    where: { userId },
+    orderBy: { createdAt: "desc" },
+  });
 
   return {
-    tier: (membership?.tier ?? fallback.tier) as MembershipTierCode,
+    tier: (membership.tier ?? fallback.tier ?? "FREE") as MembershipTierCode,
     starBalance:
-      latestWalletEvent?.balanceAfter ?? membership?.starBalance ?? fallback.starBalance,
+      latestWalletEvent?.balanceAfter ?? membership.starBalance ?? fallback.starBalance ?? 0,
+    chatQuota: membership.chatQuota ?? fallback.chatQuota ?? freeChatQuota,
+    chatUsed: membership.chatUsed ?? fallback.chatUsed ?? 0,
+    profileLimit: membership.profileLimit ?? fallback.profileLimit ?? freeProfileLimit,
+    quotaPeriodStart: (
+      membership.quotaPeriodStart ??
+      (fallback.quotaPeriodStart ? new Date(fallback.quotaPeriodStart) : new Date())
+    ).toISOString(),
   };
 }
 
@@ -148,6 +178,10 @@ export async function upsertDbMembership(
     tier: MembershipTierCode;
     starBalance: number;
     durationDays?: number;
+    chatQuota?: number;
+    chatUsed?: number;
+    profileLimit?: number;
+    quotaPeriodStart?: Date;
   },
 ) {
   const activeMembership = await ensureMembershipStateCurrent(prisma, input.userId);
@@ -172,6 +206,10 @@ export async function upsertDbMembership(
         tier,
         starBalance: input.starBalance,
         endsAt,
+        ...(input.chatQuota === undefined ? {} : { chatQuota: input.chatQuota }),
+        ...(input.chatUsed === undefined ? {} : { chatUsed: input.chatUsed }),
+        ...(input.profileLimit === undefined ? {} : { profileLimit: input.profileLimit }),
+        ...(input.quotaPeriodStart === undefined ? {} : { quotaPeriodStart: input.quotaPeriodStart }),
         isActive: true,
       },
     });
@@ -183,6 +221,10 @@ export async function upsertDbMembership(
       userId: input.userId,
       tier: input.tier,
       starBalance: input.starBalance,
+      chatQuota: input.chatQuota ?? freeChatQuota,
+      chatUsed: input.chatUsed ?? 0,
+      profileLimit: input.profileLimit ?? freeProfileLimit,
+      quotaPeriodStart: input.quotaPeriodStart ?? new Date(),
       endsAt: input.durationDays
         ? new Date(Date.now() + input.durationDays * 24 * 60 * 60 * 1000)
         : undefined,
@@ -191,46 +233,42 @@ export async function upsertDbMembership(
   });
 }
 
-async function grantFreeStarterStars(
+async function grantFreeStarterBenefits(
   prisma: PrismaClientInstance,
   userId: string,
 ) {
   const transactionId = `free_starter_${userId}`;
-  const existingGrant = await prisma.walletTransaction.findUnique({
-    where: { id: transactionId },
-  });
+  await prisma.$transaction(async (tx) => {
+    const accountState = await getDbAccountState(tx, userId);
+    const balanceAfter = accountState.starBalance + freeStarterStarGrant;
+    const created = await tx.walletTransaction.createMany({
+      data: [{
+        id: transactionId,
+        userId,
+        type: WalletEventType.GRANT,
+        amount: freeStarterStarGrant,
+        balanceAfter,
+        reason: `免费版新手体验赠送 ${freeStarterStarGrant} 星力`,
+        metadata: { source: "free_starter" },
+      }],
+      skipDuplicates: true,
+    });
 
-  if (existingGrant) {
-    return {
-      tier: "FREE" as const,
-      starBalance: existingGrant.balanceAfter,
-    };
-  }
+    if (created.count === 0) {
+      return;
+    }
 
-  const accountState = await getDbAccountState(prisma, userId);
-  const balanceAfter = accountState.starBalance + freeStarterStarGrant;
-
-  await prisma.walletTransaction.create({
-    data: {
-      id: transactionId,
+    await upsertDbMembership(tx, {
       userId,
-      type: WalletEventType.GRANT,
-      amount: freeStarterStarGrant,
-      balanceAfter,
-      reason: `免费版新手体验赠送 ${freeStarterStarGrant} 星力`,
-      metadata: { source: "free_starter" },
-    },
-  });
-  await upsertDbMembership(prisma, {
-    userId,
-    tier: "FREE",
-    starBalance: balanceAfter,
+      tier: "FREE",
+      starBalance: balanceAfter,
+      chatQuota: freeChatQuota,
+      profileLimit: freeProfileLimit,
+      chatUsed: 0,
+    });
   });
 
-  return {
-    tier: "FREE" as const,
-    starBalance: balanceAfter,
-  };
+  return getDbAccountState(prisma, userId);
 }
 
 export async function ensureEmailUserAndGetState(input: {
@@ -251,9 +289,10 @@ export async function ensureEmailUserAndGetState(input: {
     const isNewUser = !existingUser;
 
     await ensureDbUser(prisma, { userId, email: input.email });
-    const accountState = isNewUser
-      ? await grantFreeStarterStars(prisma, userId)
-      : await getDbAccountState(prisma, userId);
+    const existingState = await getDbAccountState(prisma, userId);
+    const accountState = existingState.tier === "FREE"
+      ? await grantFreeStarterBenefits(prisma, userId)
+      : existingState;
 
     return {
       userId,
@@ -277,8 +316,22 @@ export async function ensureEmailUserAndGetState(input: {
   const remembered = adminUsers.get(input.userId);
   const isNewUser = !remembered;
   const fallbackState = remembered
-    ? { tier: remembered.tier, starBalance: remembered.starBalance }
-    : { tier: "FREE" as const, starBalance: freeStarterStarGrant };
+    ? {
+        tier: remembered.tier,
+        starBalance: remembered.starBalance,
+        chatQuota: freeChatQuota,
+        chatUsed: 0,
+        profileLimit: freeProfileLimit,
+        quotaPeriodStart: new Date().toISOString(),
+      }
+    : {
+        tier: "FREE" as const,
+        starBalance: freeStarterStarGrant,
+        chatQuota: freeChatQuota,
+        chatUsed: 0,
+        profileLimit: freeProfileLimit,
+        quotaPeriodStart: new Date().toISOString(),
+      };
 
   rememberAdminUser({
     userId: input.userId,
@@ -343,9 +396,10 @@ export async function ensureGoogleUserAndGetState(input: {
       },
     });
     const isNewUser = !existingUser;
-    const accountState = isNewUser
-      ? await grantFreeStarterStars(prisma, userId)
-      : await getDbAccountState(prisma, userId);
+    const existingState = await getDbAccountState(prisma, userId);
+    const accountState = existingState.tier === "FREE"
+      ? await grantFreeStarterBenefits(prisma, userId)
+      : existingState;
 
     return {
       userId,
@@ -362,16 +416,24 @@ export async function ensureGoogleUserAndGetState(input: {
   const remembered = adminUsers.get(userId);
   const isNewUser = result.ok ? result.value.isNewUser : !remembered;
   const accountState = result.ok
-    ? result.value.accountState
-    : remembered
-      ? ({
-          tier: remembered.tier,
-          starBalance: remembered.starBalance,
-        } satisfies PersistedAccountState)
-      : ({
-          tier: "FREE",
-          starBalance: freeStarterStarGrant,
-        } satisfies PersistedAccountState);
+      ? result.value.accountState
+      : remembered
+        ? ({
+            tier: remembered.tier,
+            starBalance: remembered.starBalance,
+            chatQuota: freeChatQuota,
+            chatUsed: 0,
+            profileLimit: freeProfileLimit,
+            quotaPeriodStart: new Date().toISOString(),
+          } satisfies PersistedAccountState)
+        : ({
+            tier: "FREE",
+            starBalance: freeStarterStarGrant,
+            chatQuota: freeChatQuota,
+            chatUsed: 0,
+            profileLimit: freeProfileLimit,
+            quotaPeriodStart: new Date().toISOString(),
+          } satisfies PersistedAccountState);
 
   rememberAdminUser({
     userId,
@@ -385,7 +447,7 @@ export async function ensureGoogleUserAndGetState(input: {
 
 export async function getPersistedAccountState(
   userId: string,
-  fallback: PersistedAccountState,
+  fallback: Partial<PersistedAccountState>,
 ) {
   const dbResult = await tryPrisma(async (prisma) =>
     getDbAccountState(prisma, userId, fallback),
@@ -405,12 +467,23 @@ export async function getPersistedAccountState(
   const remembered = adminUsers.get(userId);
 
   if (!remembered) {
-    return fallback;
+    return {
+      tier: fallback.tier ?? "FREE",
+      starBalance: fallback.starBalance ?? 0,
+      chatQuota: fallback.chatQuota ?? freeChatQuota,
+      chatUsed: fallback.chatUsed ?? 0,
+      profileLimit: fallback.profileLimit ?? freeProfileLimit,
+      quotaPeriodStart: fallback.quotaPeriodStart ?? new Date().toISOString(),
+    } satisfies PersistedAccountState;
   }
 
   return {
     tier: remembered.tier,
     starBalance: remembered.starBalance,
+    chatQuota: fallback.chatQuota ?? freeChatQuota,
+    chatUsed: fallback.chatUsed ?? 0,
+    profileLimit: fallback.profileLimit ?? freeProfileLimit,
+    quotaPeriodStart: fallback.quotaPeriodStart ?? new Date().toISOString(),
   } satisfies PersistedAccountState;
 }
 

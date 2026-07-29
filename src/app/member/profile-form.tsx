@@ -16,24 +16,12 @@ import { BirthDatePicker, BirthTimePicker, formatBirthTime } from "./birth-picke
 import {
   formatBirthDate,
   normalizeBirthCalendarType,
-  switchBirthCalendarValue,
+  parseYmd,
   type BirthCalendarType,
-  type BirthDateValues,
 } from "@/lib/birth-calendar";
+import type { PublicFortuneProfile } from "@/lib/fortune-profile-public";
 
-export type FortuneProfile = {
-  name: string | null;
-  gender: string | null;
-  birthDate: string | null;
-  birthTime: string | null;
-  birthPlace: string | null;
-  calendarType: string;
-  relationshipStatus: string | null;
-  careerFocus: string | null;
-  recurringTopics: string[];
-  memorySummary: string | null;
-  completeness: number;
-};
+export type FortuneProfile = PublicFortuneProfile;
 
 type ProfileResponse =
   | { ok: true; profile: FortuneProfile }
@@ -42,7 +30,6 @@ type ProfileResponse =
 type WizardForm = {
   name: string;
   birthDate: string;
-  birthDateValues: BirthDateValues;
   birthTime: string;
   timeKnown: boolean;
   birthPlace: string;
@@ -54,7 +41,7 @@ type WizardForm = {
 
 const steps = [
   { label: "称呼", prompt: "先认识一下，我该怎么称呼你？" },
-  { label: "生辰", prompt: "接下来记录你的出生日期。请选择公历、农历或阴历。" },
+  { label: "生辰", prompt: "接下来记录你的出生日期。通常按公历填写；如果你记得的是农历，也可以切换。" },
   { label: "时辰", prompt: "出生时辰会让排盘更细。如果不确定，也可以直接告诉我。" },
   { label: "行业", prompt: "你现在主要处在哪个行业或领域？" },
   { label: "身份", prompt: "用一句话描述你现在的职业或身份。" },
@@ -62,7 +49,8 @@ const steps = [
 ] as const;
 
 const industryOptions = ["互联网", "金融", "教育", "医疗", "传媒", "制造", "自由职业", "创业", "学生"];
-const topicOptions = ["事业", "感情", "财运", "选择", "学业", "年度运势"];
+const topicOptions = ["事业", "感情", "财运", "人生选择", "学业", "年度运势"];
+const profileBirthCalendarTypes = ["solar", "lunar"] as const;
 
 function splitCareerFocus(value: string | null | undefined) {
   if (!value) {
@@ -76,6 +64,11 @@ function splitCareerFocus(value: string | null | undefined) {
   }
 
   return { industry: "", role: value };
+}
+
+function getSupportedCalendarType(value: string | null | undefined): BirthCalendarType {
+  const type = normalizeBirthCalendarType(value);
+  return type === "yinli" ? "lunar" : type;
 }
 
 function AssistantBubble({ children }: { children: React.ReactNode }) {
@@ -154,7 +147,7 @@ function canContinue(step: number, form: WizardForm) {
   }
 
   if (step === 1) {
-    return form.birthDate.length > 0;
+    return Boolean(parseYmd(form.birthDate));
   }
 
   if (step === 2) {
@@ -205,32 +198,12 @@ function CurrentStepFields({
       <BirthDatePicker
         value={form.birthDate}
         calendarType={form.calendarType}
-        onCalendarTypeChange={(calendarType: BirthCalendarType) =>
-          setForm((current) => {
-            const next = switchBirthCalendarValue({
-              currentType: normalizeBirthCalendarType(current.calendarType),
-              currentValue: current.birthDate,
-              values: current.birthDateValues,
-              nextType: calendarType,
-            });
-
-            return {
-              ...current,
-              calendarType,
-              birthDate: next.value,
-              birthDateValues: next.values,
-            };
-          })
+        calendarTypes={profileBirthCalendarTypes}
+        onCalendarTypeChange={(calendarType) =>
+          setForm((current) => ({ ...current, calendarType }))
         }
         onChange={(birthDate) =>
-          setForm((current) => ({
-            ...current,
-            birthDate,
-            birthDateValues: {
-              ...current.birthDateValues,
-              [current.calendarType]: birthDate,
-            },
-          }))
+          setForm((current) => ({ ...current, birthDate }))
         }
       />
     );
@@ -347,19 +320,20 @@ function CurrentStepFields({
 export function ProfileForm({
   initialProfile,
   mode = "member",
+  subjectKey = initialProfile?.subjectKey ?? "self",
+  startInEditMode = false,
 }: {
   initialProfile: FortuneProfile | null;
   mode?: "member" | "onboarding";
+  subjectKey?: string;
+  startInEditMode?: boolean;
 }) {
   const career = splitCareerFocus(initialProfile?.careerFocus);
-  const initialCalendarType = normalizeBirthCalendarType(initialProfile?.calendarType);
+  const initialCalendarType = getSupportedCalendarType(initialProfile?.calendarType);
   const [profile, setProfile] = useState<FortuneProfile | null>(initialProfile);
   const [form, setForm] = useState<WizardForm>({
     name: initialProfile?.name ?? "",
     birthDate: initialProfile?.birthDate ?? "",
-    birthDateValues: initialProfile?.birthDate
-      ? { [initialCalendarType]: initialProfile.birthDate }
-      : {},
     birthTime: initialProfile?.birthTime ?? "",
     timeKnown: Boolean(initialProfile?.birthTime),
     birthPlace: initialProfile?.birthPlace ?? "",
@@ -370,9 +344,9 @@ export function ProfileForm({
   });
   const [step, setStep] = useState(0);
   const [saving, setSaving] = useState(false);
-  const [completed, setCompleted] = useState((initialProfile?.completeness ?? 0) >= 100);
+  const [completed, setCompleted] = useState(!startInEditMode && (initialProfile?.completeness ?? 0) >= 100);
   const [message, setMessage] = useState(
-    (initialProfile?.completeness ?? 0) >= 100
+    !startInEditMode && (initialProfile?.completeness ?? 0) >= 100
       ? "你的档案已经建立，无需重复填写。"
       : initialProfile
         ? "已有档案已载入，可以继续完善。"
@@ -413,6 +387,7 @@ export function ProfileForm({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          subjectKey,
           name: form.name,
           gender: initialProfile?.gender ?? "",
           birthDate: form.birthDate,
@@ -520,16 +495,6 @@ export function ProfileForm({
                   进入 Chat，开始问事
                   <ArrowRight size={17} aria-hidden="true" />
                 </Link>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCompleted(false);
-                    setStep(0);
-                  }}
-                  className="inline-flex h-12 items-center justify-center rounded-full border border-[#3a3a31] px-5 text-sm text-[#c8c0b2] transition hover:border-[#c9a35f]/45"
-                >
-                  再检查一下
-                </button>
               </div>
             </motion.div>
           ) : (

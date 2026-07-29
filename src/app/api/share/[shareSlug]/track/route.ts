@@ -1,4 +1,4 @@
-import { isDatabaseUnavailableError } from "@/lib/prisma";
+import { publicApiErrorResponse } from "@/lib/public-api-error";
 import {
   normalizeShareEvent,
   resolveShareTrackingSource,
@@ -44,13 +44,10 @@ export async function POST(
       source,
     });
   } catch (error) {
-    if (isDatabaseUnavailableError(error)) {
-      return Response.json(
-        { ok: false, code: error.code, message: error.message },
-        { status: error.status },
-      );
-    }
-
-    throw error;
+    return publicApiErrorResponse(error, {
+      context: "record shared report event",
+      message: "分享记录失败，请稍后重试。",
+      unavailableMessage: "分享服务暂时不可用，请稍后重试。",
+    });
   }
 }

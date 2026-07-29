@@ -65,9 +65,9 @@ function initials(value: string) {
 }
 
 function tierLabel(tier: string) {
-  if (tier === "YEARLY") return "年度会员";
-  if (tier === "PRO" || tier === "PREMIUM") return "进阶会员";
-  if (tier === "MONTHLY") return "月度会员";
+  if (tier === "YEARLY") return "尊享月卡";
+  if (tier === "PRO" || tier === "PREMIUM") return "进阶月卡";
+  if (tier === "MONTHLY") return "轻享月卡";
   if (tier === "TRIAL") return "体验会员";
   return "免费用户";
 }

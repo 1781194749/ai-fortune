@@ -4,6 +4,7 @@ import { ToolPageShell } from "@/app/_components/tool-page-shell";
 import { getUserPalmImages } from "@/lib/image-upload-store";
 import { getMemberEntitlementSummary } from "@/lib/member-entitlements";
 import { getUserMockOrders } from "@/lib/mock-payment-store";
+import { toPublicPalmImage } from "@/lib/palm-image-public";
 import { getUserMockReports } from "@/lib/report-store";
 import { createLoginHref } from "@/lib/return-to";
 import { getSession } from "@/lib/session";
@@ -39,7 +40,7 @@ export default async function PalmPage() {
       <PalmClient
         initialBalance={session.starBalance}
         initialPalmQuota={entitlementSummary.palmQuota.remaining}
-        initialImage={images[0] ?? null}
+        initialImage={images[0] ? toPublicPalmImage(images[0]) : null}
       />
     </ToolPageShell>
   );

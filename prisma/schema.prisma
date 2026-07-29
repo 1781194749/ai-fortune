@@ -131,7 +131,7 @@ model User {
   createdAt           DateTime                 @default(now())
   updatedAt           DateTime                 @updatedAt
   accounts            AuthAccount[]
-  profile             FortuneProfile?
+  profiles            FortuneProfile[]
   memberships         Membership[]
   orders              Order[]
   walletEvents        WalletTransaction[]
@@ -161,10 +161,13 @@ model AuthAccount {
 
 model FortuneProfile {
   id                 String    @id @default(cuid())
-  userId             String    @unique
+  userId             String
+  subjectKey         String    @default("self")
   name               String?
   gender             String?
   birthday           DateTime?
+  lunarBirthDate     String?
+  yinliBirthDate     String?
   birthTime          String?
   birthPlace         String?
   calendarType       String    @default("solar")
@@ -179,19 +182,26 @@ model FortuneProfile {
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
   user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, subjectKey])
+  @@index([userId, updatedAt])
 }
 
 model Membership {
-  id          String         @id @default(cuid())
-  userId      String
-  tier        MembershipTier
-  startsAt    DateTime       @default(now())
-  endsAt      DateTime?
-  starBalance Int            @default(0)
-  isActive    Boolean        @default(true)
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
-  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id               String         @id @default(cuid())
+  userId           String
+  tier             MembershipTier
+  startsAt         DateTime       @default(now())
+  endsAt           DateTime?
+  starBalance      Int            @default(0)
+  chatQuota        Int            @default(10)
+  chatUsed         Int            @default(0)
+  profileLimit     Int            @default(3)
+  quotaPeriodStart DateTime       @default(now())
+  isActive         Boolean        @default(true)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, isActive])
 }
@@ -298,28 +308,30 @@ model AiSession {
 }
 
 model AiTurn {
-  id              String              @id @default(cuid())
-  sessionId       String
-  userId          String
-  sequence        Int
-  clientRequestId String
-  requestHash     String
-  status          AiTurnStatus        @default(GENERATING)
-  costStars       Int
-  refundedStars   Int                 @default(0)
-  provider        String?
-  model           String?
-  usageLogId      String?             @unique
-  errorCode       String?
-  result          Json?
-  startedAt       DateTime            @default(now())
-  completedAt     DateTime?
-  createdAt       DateTime            @default(now())
-  updatedAt       DateTime            @updatedAt
-  session         AiSession           @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  usageLog        UsageLog?           @relation(fields: [usageLogId], references: [id], onDelete: SetNull)
-  messages        Message[]
-  walletEvents    WalletTransaction[]
+  id                 String              @id @default(cuid())
+  sessionId          String
+  userId             String
+  sequence           Int
+  clientRequestId    String
+  requestHash        String
+  status             AiTurnStatus        @default(GENERATING)
+  costStars          Int
+  refundedStars      Int                 @default(0)
+  quotaUnits         Int                 @default(1)
+  refundedQuotaUnits Int                 @default(0)
+  provider           String?
+  model              String?
+  usageLogId         String?             @unique
+  errorCode          String?
+  result             Json?
+  startedAt          DateTime            @default(now())
+  completedAt        DateTime?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  session            AiSession           @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  usageLog           UsageLog?           @relation(fields: [usageLogId], references: [id], onDelete: SetNull)
+  messages           Message[]
+  walletEvents       WalletTransaction[]
 
   @@unique([userId, clientRequestId])
   @@unique([sessionId, sequence])

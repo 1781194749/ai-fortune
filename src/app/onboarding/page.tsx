@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { ProfileForm } from "@/app/member/profile-form";
 import { XuanjiMark } from "@/app/_components/xuanji-mark";
 import { getFortuneProfile, hasSavedFortuneProfile } from "@/lib/fortune-profile-store";
+import { toPublicFortuneProfile } from "@/lib/fortune-profile-public";
 import { createLoginHref } from "@/lib/return-to";
 import { getSession } from "@/lib/session";
 import { brand } from "@/lib/site";
@@ -10,7 +11,7 @@ import { brand } from "@/lib/site";
 export default async function OnboardingPage({
   searchParams,
 }: {
-  searchParams: Promise<{ edit?: string | string[] }>;
+  searchParams: Promise<{ edit?: string | string[]; subjectKey?: string | string[] }>;
 }) {
   const session = await getSession();
 
@@ -18,9 +19,10 @@ export default async function OnboardingPage({
     redirect(createLoginHref("/chat"));
   }
 
-  const { edit: rawEdit } = await searchParams;
+  const { edit: rawEdit, subjectKey: rawSubjectKey } = await searchParams;
   const edit = Array.isArray(rawEdit) ? rawEdit[0] : rawEdit;
-  const profile = await getFortuneProfile(session.userId);
+  const subjectKey = (Array.isArray(rawSubjectKey) ? rawSubjectKey[0] : rawSubjectKey) ?? "self";
+  const profile = await getFortuneProfile(session.userId, subjectKey);
 
   if (hasSavedFortuneProfile(profile) && edit !== "1") {
     redirect("/chat");
@@ -39,9 +41,7 @@ export default async function OnboardingPage({
             <span className="block text-[9px] tracking-[0.22em] text-[#777168]">起盘建档</span>
           </span>
         </Link>
-        <Link href="/chat" className="text-sm text-[#8f887b] transition hover:text-[#efd9a6]">
-          跳过，先去 Chat
-        </Link>
+        <span className="text-sm text-[#6f6a61]">完成基础资料后即可开始问事</span>
       </header>
 
       <section className="relative mx-auto max-w-6xl py-12 sm:py-16">
@@ -56,7 +56,12 @@ export default async function OnboardingPage({
           </p>
         </div>
 
-        <ProfileForm initialProfile={profile} mode="onboarding" />
+        <ProfileForm
+          initialProfile={profile ? toPublicFortuneProfile(profile) : null}
+          mode="onboarding"
+          subjectKey={subjectKey}
+          startInEditMode={edit === "1"}
+        />
       </section>
     </main>
   );

@@ -6,7 +6,7 @@ import {
 import { createMockOrder, getOrderDisplay } from "@/lib/mock-payment-store";
 import { settleOptionalSideEffects } from "@/lib/optional-side-effects";
 import { quotePromotion, recordPromotionEvent } from "@/lib/promo-code";
-import { isDatabaseUnavailableError } from "@/lib/prisma";
+import { publicApiErrorResponse } from "@/lib/public-api-error";
 import { getSession } from "@/lib/session";
 import { recordShareAttributionConversion } from "@/lib/share-attribution";
 
@@ -77,13 +77,11 @@ export async function POST(request: Request) {
       });
     }
 
-    if (isDatabaseUnavailableError(error)) {
-      return Response.json(
-        { ok: false, code: error.code, message: error.message },
-        { status: error.status },
-      );
-    }
-
-    throw error;
+    return publicApiErrorResponse(error, {
+      context: "create deep report order",
+      message: "订单创建失败，请稍后重试。",
+      status: 503,
+      unavailableMessage: "订单服务暂时不可用，请稍后重试。",
+    });
   }
 }

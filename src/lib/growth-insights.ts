@@ -108,7 +108,7 @@ export function buildSourceGrowthInsights(rows: GrowthRoiRow[]): SourceGrowthIns
           priority: "medium",
           action: "强化首单转化",
           reason: `登录率达到 ${formatPercent(loginRate)}，但支付尚未发生。`,
-          nextStep: "在登录后首屏露出体验卡或首单半价，减少用户从兴趣到付款的跳转。",
+          nextStep: "在登录后首屏露出免费版与轻享月卡首单优惠，减少用户从兴趣到付款的跳转。",
           funnelLabel,
           conversionLabel,
         } satisfies SourceGrowthInsight;

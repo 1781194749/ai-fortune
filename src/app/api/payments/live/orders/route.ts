@@ -1,4 +1,5 @@
 import { isProductCode } from "@/lib/commerce";
+import QRCode from "qrcode";
 import {
   getEligibleNewUserCheckoutExperiment,
   recordCheckoutExperimentOrderCreated,
@@ -7,7 +8,10 @@ import { getLivePaymentLaunchGate } from "@/lib/live-payment-launch-gate";
 import { settleOptionalSideEffects } from "@/lib/optional-side-effects";
 import { createLivePaymentCheckout, isLivePaymentChannel } from "@/lib/payment-adapters";
 import { quotePromotion, recordPromotionEvent } from "@/lib/promo-code";
-import { isDatabaseUnavailableError } from "@/lib/prisma";
+import {
+  logPublicApiError,
+  publicApiErrorResponse,
+} from "@/lib/public-api-error";
 import { getRuntimeProduct } from "@/lib/product-config";
 import { getSession } from "@/lib/session";
 import { recordShareAttributionConversion } from "@/lib/share-attribution";
@@ -15,6 +19,52 @@ import {
   DeepReportRequirementsError,
   getDeepReportRequirementsErrorResponse,
 } from "@/lib/deep-report-readiness";
+
+type SuccessfulLiveCheckout = Extract<
+  Awaited<ReturnType<typeof createLivePaymentCheckout>>,
+  { ok: true }
+>;
+
+async function toPublicLiveCheckout(result: SuccessfulLiveCheckout) {
+  if (result.checkout.type === "alipay_page_pay") {
+    const redirectUrl = new URL(result.checkout.gateway);
+
+    for (const [key, value] of Object.entries(result.checkout.params)) {
+      redirectUrl.searchParams.set(key, value);
+    }
+
+    return {
+      ok: true as const,
+      message: "订单已创建，正在前往支付宝。",
+      checkout: {
+        type: "redirect" as const,
+        url: redirectUrl.toString(),
+      },
+    };
+  }
+
+  const codeUrl = result.checkout.codeUrl;
+
+  if (typeof codeUrl !== "string" || !codeUrl) {
+    throw new Error("Wechat checkout did not return a code URL.");
+  }
+
+  const qrCodeDataUrl = await QRCode.toDataURL(codeUrl, {
+    errorCorrectionLevel: "M",
+    margin: 1,
+    width: 320,
+  });
+
+  return {
+    ok: true as const,
+    message: "订单已创建，请使用微信扫码支付。",
+    checkout: {
+      type: "wechat_qr" as const,
+      qrCodeDataUrl,
+      priceLabel: result.checkout.priceLabel,
+    },
+  };
+}
 
 async function createLiveOrderResponse(request: Request) {
   const session = await getSession();
@@ -58,11 +108,9 @@ async function createLiveOrderResponse(request: Request) {
     return Response.json(
       {
         ok: false,
-        code: livePaymentGate.code,
-        message: livePaymentGate.message,
-        launchGate: livePaymentGate,
+        message: "当前支付服务暂不可用，请稍后再试。",
       },
-      { status: 409 },
+      { status: 503 },
     );
   }
 
@@ -88,7 +136,11 @@ async function createLiveOrderResponse(request: Request) {
   });
 
   if (!result.ok) {
-    return Response.json(result, { status: 400 });
+    logPublicApiError("live payment checkout unavailable", result);
+    return Response.json(
+      { ok: false, message: "支付通道暂不可用，请稍后再试。" },
+      { status: 503 },
+    );
   }
 
   await settleOptionalSideEffects("live order created telemetry", [
@@ -120,7 +172,7 @@ async function createLiveOrderResponse(request: Request) {
     }),
   ]);
 
-  return Response.json(result);
+  return Response.json(await toPublicLiveCheckout(result));
 }
 
 export async function POST(request: Request) {
@@ -133,13 +185,11 @@ export async function POST(request: Request) {
       });
     }
 
-    if (isDatabaseUnavailableError(error)) {
-      return Response.json(
-        { ok: false, code: error.code, message: error.message },
-        { status: error.status },
-      );
-    }
-
-    throw error;
+    return publicApiErrorResponse(error, {
+      context: "create live payment order",
+      message: "订单创建失败，请稍后重试。",
+      status: 503,
+      unavailableMessage: "支付服务暂时不可用，请稍后重试。",
+    });
   }
 }

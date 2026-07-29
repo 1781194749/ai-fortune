@@ -44,7 +44,7 @@ export default async function MemberEntitlementsPage() {
       <PageHeader
         eyebrow="Entitlements"
         title="权益额度"
-        description="集中管理会员身份、陪伴周期、报告额度、手相额度和必要追问余量。"
+        description="集中管理本月问答、档案人数、报告、手相和会员周期；页面展示的额度都会在服务端实际限制。"
         action={{ href: "/pricing", label: "管理会员方案", icon: CircleDollarSign }}
       />
 
@@ -61,7 +61,7 @@ export default async function MemberEntitlementsPage() {
         </div>
       ) : null}
 
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
         <div className="rounded-lg border border-[#252a32] bg-[#101318] p-5">
           <p className="text-xs text-[#697386]">当前身份</p>
           <p className="mt-3 text-2xl font-semibold text-[#d8b873]">{membership.label}</p>
@@ -71,6 +71,16 @@ export default async function MemberEntitlementsPage() {
           <p className="text-xs text-[#697386]">会员有效期</p>
           <p className="mt-3 text-2xl font-semibold text-[#f4efe5]">{lifecycle.endsAt ? formatTime(lifecycle.endsAt) : "未开通"}</p>
           <p className="mt-3 text-sm text-[#8d98a8]">{lifecycle.daysRemaining !== null ? `剩余 ${lifecycle.daysRemaining} 天` : "当前没有有效会员周期"}</p>
+        </div>
+        <div className="rounded-lg border border-[#252a32] bg-[#101318] p-5">
+          <p className="text-xs text-[#697386]">本月问答</p>
+          <p className="mt-3 text-2xl font-semibold text-[#f4efe5]">{Math.max(0, (session.chatQuota ?? 10) - (session.chatUsed ?? 0))} / {session.chatQuota ?? 10}</p>
+          <p className="mt-3 text-sm text-[#8d98a8]">达到上限后系统会阻止继续提问。</p>
+        </div>
+        <div className="rounded-lg border border-[#252a32] bg-[#101318] p-5">
+          <p className="text-xs text-[#697386]">档案人数上限</p>
+          <p className="mt-3 text-2xl font-semibold text-[#f4efe5]">{session.profileLimit ?? 3} 份</p>
+          <p className="mt-3 text-sm text-[#8d98a8]">新建超出上限时会被服务端拒绝。</p>
         </div>
         <div className="rounded-lg border border-[#252a32] bg-[#101318] p-5">
           <p className="text-xs text-[#697386]">续费方式</p>
@@ -95,8 +105,8 @@ export default async function MemberEntitlementsPage() {
             <p className="mt-3 text-sm font-medium text-[#d7dee8]">{lifecycle.endsAt ? formatTime(lifecycle.endsAt) : "未设置"}</p>
           </div>
           <div className="bg-[#101318] p-5">
-            <p className="text-xs text-[#697386]">追问余量</p>
-            <p className="mt-3 text-sm font-medium text-[#d7dee8]">{session.starBalance} 星力</p>
+            <p className="text-xs text-[#697386]">工具星力</p>
+            <p className="mt-3 text-sm font-medium text-[#d7dee8]">{session.starBalance} 星力（不等同于问答次数）</p>
           </div>
         </div>
       </Panel>

@@ -5,7 +5,8 @@ import {
   retryDeepReportWithMemberQuota,
 } from "@/lib/deep-report-job";
 import { getMockOrder } from "@/lib/mock-payment-store";
-import { isDatabaseUnavailableError } from "@/lib/prisma";
+import { publicApiErrorResponse } from "@/lib/public-api-error";
+import { toCustomerReport } from "@/lib/report-public-view";
 import { getMockReport, type MockReport } from "@/lib/report-store";
 import { getSession } from "@/lib/session";
 
@@ -89,11 +90,11 @@ export async function POST(
       return Response.json(
         {
           ok: true,
-          report: retried.report,
+          report: toCustomerReport(retried.report),
           queued: retried.queued,
           message: retried.dispatchQueued
-            ? "已重新进入生成队列。"
-            : "重试已记录，等待队列恢复派发。",
+            ? "已重新开始生成报告。"
+            : "重试请求已记录，系统会尽快继续生成。",
         },
         { status: 202 },
       );
@@ -120,35 +121,32 @@ export async function POST(
     return Response.json(
       {
         ok: true,
-        report: retried.report,
+        report: toCustomerReport(retried.report),
         queued: retried.queued,
         entitlement: retried.entitlement,
         message: retried.dispatchQueued
-          ? "已重新使用 1 份会员报告额度并进入生成队列。"
-          : "重试已记录，等待队列恢复派发。",
+          ? "已重新使用 1 份会员报告额度并开始生成。"
+          : "重试请求已记录，系统会尽快继续生成。",
       },
       { status: 202 },
     );
   } catch (error) {
-    if (isDatabaseUnavailableError(error)) {
-      return Response.json(
-        { ok: false, code: error.code, message: error.message },
-        { status: error.status },
-      );
-    }
-
     if (error instanceof InsufficientDeepReportEntitlementError) {
       return Response.json(
         {
           ok: false,
-          message: error.message,
+          message: "深度报告额度不足，请购买会员或单次报告。",
           entitlement: error.balance,
         },
         { status: 402 },
       );
     }
 
-    const message = error instanceof Error ? error.message : "报告重试失败。";
-    return Response.json({ ok: false, message }, { status: 503 });
+    return publicApiErrorResponse(error, {
+      context: "retry customer report",
+      message: "报告重试失败，请稍后再试。",
+      status: 503,
+      unavailableMessage: "报告服务暂时不可用，请稍后重试。",
+    });
   }
 }

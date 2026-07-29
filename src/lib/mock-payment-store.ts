@@ -28,6 +28,7 @@ import {
 import {
   checkMembershipEntitlementsCanBeRevokedForOrder,
   grantMembershipEntitlementsForOrder,
+  grantMembershipEntitlementsForOrderInTransaction,
   revokeMembershipEntitlementsForOrder,
   type MockEntitlementTransaction,
 } from "@/lib/entitlement-store";
@@ -378,6 +379,11 @@ async function settleDbPaymentOrder(
     });
 
     if (order.status === OrderStatus.PAID) {
+      await grantMembershipEntitlementsForOrderInTransaction(tx, {
+        userId: order.userId,
+        orderId: order.id,
+        productCode: product.code,
+      });
       return {
         ok: true as const,
         order: mapDbOrder(order),
@@ -419,6 +425,11 @@ async function settleDbPaymentOrder(
       const currentOrder = await tx.order.findUnique({ where: { id: order.id } });
 
       if (currentOrder?.status === OrderStatus.PAID) {
+        await grantMembershipEntitlementsForOrderInTransaction(tx, {
+          userId: currentOrder.userId,
+          orderId: currentOrder.id,
+          productCode: product.code,
+        });
         const currentState = await getDbAccountState(tx, order.userId, accountState);
         return {
           ok: true as const,
@@ -484,6 +495,12 @@ async function settleDbPaymentOrder(
       });
     }
 
+    await grantMembershipEntitlementsForOrderInTransaction(tx, {
+      userId: paidOrder.userId,
+      orderId: paidOrder.id,
+      productCode: product.code,
+    });
+
     return {
       ok: true as const,
       order: mapDbOrder(paidOrder),
@@ -503,13 +520,17 @@ export async function createMockOrder(
   return createPaymentOrder(userId, productCode, "MOCK", input);
 }
 
-export async function closeMockOrder(input: { orderId: string; userId: string }) {
+export async function closePendingPaymentOrder(input: {
+  orderId: string;
+  userId: string;
+  provider: PaymentProviderCode;
+}) {
   const dbResult = await tryPrisma(async (prisma) => {
     const updated = await prisma.order.updateMany({
       where: {
         id: input.orderId,
         userId: input.userId,
-        provider: PaymentProvider.MOCK,
+        provider: toDbPaymentProvider(input.provider),
         status: OrderStatus.PENDING,
       },
       data: { status: OrderStatus.CLOSED },
@@ -533,7 +554,7 @@ export async function closeMockOrder(input: { orderId: string; userId: string })
   if (
     !order ||
     order.userId !== input.userId ||
-    order.provider !== "MOCK" ||
+    order.provider !== input.provider ||
     order.status !== "PENDING"
   ) {
     return null;
@@ -542,6 +563,10 @@ export async function closeMockOrder(input: { orderId: string; userId: string })
   const closed = { ...order, status: "CLOSED" as const };
   state.orders.set(order.id, closed);
   return closed;
+}
+
+export async function closeMockOrder(input: { orderId: string; userId: string }) {
+  return closePendingPaymentOrder({ ...input, provider: "MOCK" });
 }
 
 export async function createPaymentOrder(
@@ -556,7 +581,7 @@ export async function createPaymentOrder(
 
   const product = input.product ?? getProduct(productCode);
 
-  if (!product) {
+  if (!product || product.purchasable === false) {
     throw new Error(`Unknown product: ${productCode}`);
   }
 
@@ -677,14 +702,6 @@ export async function markExternalPaymentOrderPaid(input: {
   const dbResult = await tryPrisma((prisma) => settleDbPaymentOrder(prisma, input));
 
   if (dbResult.ok) {
-    if (dbResult.value.ok) {
-      await grantMembershipEntitlementsForOrder({
-        userId: dbResult.value.order.userId,
-        orderId: dbResult.value.order.id,
-        productCode: dbResult.value.order.productCode,
-      });
-    }
-
     return dbResult.value;
   }
 
@@ -1173,12 +1190,6 @@ export async function completeMockOrder(orderId: string, session: SessionPayload
 
   if (dbResult.ok) {
     if (dbResult.value.ok) {
-      await grantMembershipEntitlementsForOrder({
-        userId: dbResult.value.order.userId,
-        orderId: dbResult.value.order.id,
-        productCode: dbResult.value.order.productCode,
-      });
-
       return {
         ok: true as const,
         order: dbResult.value.order,
@@ -1482,7 +1493,19 @@ export async function grantOperationalStars(input: {
 
 export function getOrderDisplay(order: MockOrder) {
   return {
-    ...order,
+    id: order.id,
+    productCode: order.productCode,
+    productName: order.productName,
+    amountCents: order.amountCents,
+    currency: order.currency,
+    status: order.status,
+    provider: order.provider,
+    originalAmountCents: order.originalAmountCents,
+    discountCents: order.discountCents,
+    promotionCode: order.promotionCode,
+    promotionName: order.promotionName,
+    createdAt: order.createdAt,
+    paidAt: order.paidAt,
     priceLabel: formatPrice(order.amountCents, order.currency),
     originalPriceLabel:
       order.originalAmountCents && order.discountCents

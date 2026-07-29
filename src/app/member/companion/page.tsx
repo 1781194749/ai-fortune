@@ -1,7 +1,10 @@
 import Link from "next/link";
 import { ArrowRight, CalendarCheck2, Check, Route, Sparkles } from "lucide-react";
 import { hasMemberCompanionAccess } from "@/lib/member-companion-access";
-import { getMemberCompanionState } from "@/lib/member-companion-store";
+import {
+  getMemberCompanionState,
+  toPublicMemberCompanionState,
+} from "@/lib/member-companion-store";
 import { getRequiredMemberSession } from "../member-data";
 import { PageHeader, Panel } from "../member-ui";
 import { CompanionClient } from "./companion-client";
@@ -19,7 +22,7 @@ export default async function MemberCompanionPage() {
           description="围绕一个真正重要的问题连续跟进 30 天，把零散对话整理成可执行的阶段判断。"
         />
 
-        <Panel title="30 天深度陪伴" description="年度会员（¥399/年）专属能力" icon={Route}>
+        <Panel title="30 天深度陪伴" description="尊享月卡（¥99/月）专属能力" icon={Route}>
           <div className="grid gap-px bg-[#20252d] lg:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
             <div className="bg-[#101318] p-5 sm:p-7">
               <p className="text-xs font-medium text-[#d8b873]">不是多一包次数，而是连续看同一个问题</p>
@@ -57,10 +60,10 @@ export default async function MemberCompanionPage() {
                 </div>
               </div>
               <Link
-                href="/pricing#plan-yearly"
+                href="/pricing#plan-premium_monthly"
                 className="mt-7 inline-flex h-11 items-center justify-center gap-2 rounded-md bg-[#c9a35f] px-4 text-sm font-medium text-[#17130d] transition hover:bg-[#efd9a6]"
               >
-                查看年度会员方案（¥399/年）
+                查看尊享月卡（¥99/月）
                 <ArrowRight size={16} aria-hidden="true" />
               </Link>
             </div>
@@ -80,7 +83,7 @@ export default async function MemberCompanionPage() {
         description="一次只跟进一个核心主题。每周根据真实对话复盘，30 天后形成阶段总结。"
         action={{ href: "/chat", label: "补充最新变化", icon: CalendarCheck2 }}
       />
-      <CompanionClient initialState={state} />
+      <CompanionClient initialState={toPublicMemberCompanionState(state)} />
     </div>
   );
 }

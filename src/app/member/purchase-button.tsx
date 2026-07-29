@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import Image from "next/image";
 import {
   ArrowRight,
   BadgePercent,
@@ -14,28 +15,6 @@ import {
 import type { ProductCode } from "@/lib/commerce";
 
 type LiveChannel = "alipay" | "wechat_pay";
-type LivePaymentGate = {
-  allowed: boolean;
-  label: string;
-  detail: string;
-  action: string;
-  message: string;
-  decision: string;
-  scope: string;
-  scopeLabel: string;
-  requiresAllowlist: boolean;
-  allowlist: {
-    configured: boolean;
-    userIdsConfigured: number;
-    emailsConfigured: number;
-    totalAccounts: number;
-  };
-  currentUser: {
-    checked: boolean;
-    allowed: boolean;
-    matchedBy: string;
-  };
-};
 
 type PromotionQuote =
   | {
@@ -50,11 +29,21 @@ type PromotionQuote =
       message?: string;
     };
 
+type LiveCheckoutResponse =
+  | {
+      ok: true;
+      message: string;
+      checkout:
+        | { type: "redirect"; url: string }
+        | { type: "wechat_qr"; qrCodeDataUrl: string; priceLabel: string };
+    }
+  | { ok: false; message?: string };
+
 export function PurchaseButton({
   productCode,
   initialPromotionCode = "",
   offerLabel,
-  livePaymentGate,
+  livePaymentEnabled,
   ctaLabel = "立即开通",
   featured = false,
   disabledReason,
@@ -62,7 +51,7 @@ export function PurchaseButton({
   productCode: ProductCode;
   initialPromotionCode?: string;
   offerLabel?: string;
-  livePaymentGate: LivePaymentGate;
+  livePaymentEnabled: boolean;
   ctaLabel?: string;
   featured?: boolean;
   disabledReason?: string;
@@ -74,6 +63,10 @@ export function PurchaseButton({
   const [promotionQuote, setPromotionQuote] = useState<Extract<PromotionQuote, { ok: true }> | null>(null);
   const [promotionOpen, setPromotionOpen] = useState(false);
   const [checkoutMessage, setCheckoutMessage] = useState("");
+  const [wechatCheckout, setWechatCheckout] = useState<{
+    qrCodeDataUrl: string;
+    priceLabel: string;
+  } | null>(null);
 
   useEffect(() => {
     if (!promotionOpen) {
@@ -163,7 +156,7 @@ export function PurchaseButton({
   }
 
   async function createLiveOrder(channel: LiveChannel) {
-    if (!livePaymentGate.allowed) {
+    if (!livePaymentEnabled) {
       return;
     }
 
@@ -180,14 +173,24 @@ export function PurchaseButton({
           promotionCode: promotionCode.trim() || undefined,
         }),
       });
-      const data = (await response.json()) as { ok: boolean; message?: string };
+      const data = (await response.json()) as LiveCheckoutResponse;
 
       if (!response.ok || !data.ok) {
         setCheckoutMessage(data.message ?? "支付通道暂不可用，请稍后再试。");
         return;
       }
 
-      setCheckoutMessage("订单已创建，请按支付页面提示继续。");
+      setCheckoutMessage(data.message);
+
+      if (data.checkout.type === "redirect") {
+        window.location.assign(data.checkout.url);
+        return;
+      }
+
+      setWechatCheckout({
+        qrCodeDataUrl: data.checkout.qrCodeDataUrl,
+        priceLabel: data.checkout.priceLabel,
+      });
     } catch {
       setCheckoutMessage("网络连接异常，请稍后再试。");
     } finally {
@@ -218,7 +221,7 @@ export function PurchaseButton({
 
   return (
     <div className="mt-6">
-      {livePaymentGate.allowed ? (
+      {livePaymentEnabled ? (
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
           <button
             type="button"
@@ -352,6 +355,52 @@ export function PurchaseButton({
             >
               完成
             </button>
+          </div>
+        </div>,
+        document.body,
+      ) : null}
+
+      {wechatCheckout && typeof document !== "undefined" ? createPortal(
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={`wechat-checkout-title-${productCode}`}
+          onClick={(event) => {
+            if (event.target === event.currentTarget) {
+              setWechatCheckout(null);
+            }
+          }}
+          className="fixed inset-0 z-[120] flex items-center justify-center bg-black/65 px-4 backdrop-blur-sm"
+        >
+          <div className="w-full max-w-[380px] rounded-[26px] border border-[#3a392f] bg-[#11120f] p-5 text-center shadow-[0_32px_120px_rgba(0,0,0,0.55)]">
+            <div className="flex items-start justify-between gap-4 text-left">
+              <div>
+                <p className="text-xs tracking-[0.22em] text-[#79b8b1]">WECHAT PAY</p>
+                <h3 id={`wechat-checkout-title-${productCode}`} className="mt-2 font-ritual text-2xl text-[#f4efe5]">
+                  微信扫码支付
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setWechatCheckout(null)}
+                className="flex size-9 shrink-0 items-center justify-center rounded-full text-[#8f887b] transition hover:bg-[#1c1d19] hover:text-[#f4efe5]"
+                aria-label="关闭微信支付二维码"
+              >
+                <X size={16} aria-hidden="true" />
+              </button>
+            </div>
+            <div className="mx-auto mt-5 size-[250px] overflow-hidden rounded-lg bg-white p-2">
+              <Image
+                src={wechatCheckout.qrCodeDataUrl}
+                alt="微信支付二维码"
+                width={234}
+                height={234}
+                unoptimized
+                className="size-full"
+              />
+            </div>
+            <p className="mt-4 text-base font-semibold text-[#f4efe5]">应付 {wechatCheckout.priceLabel}</p>
+            <p className="mt-2 text-xs leading-6 text-[#8f887b]">支付完成后可关闭此窗口并返回个人中心查看权益。</p>
           </div>
         </div>,
         document.body,

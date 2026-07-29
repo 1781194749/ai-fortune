@@ -177,7 +177,7 @@ const templates = [
     goal: "确认在没有真实支付资质时，开发链路仍可完整验证订单和权益。",
     routes: ["/member", "/api/payments/mock/orders", "/checkout/mock/[orderId]"],
     steps: [
-      "在会员页购买体验卡或月度会员。",
+      "在会员页购买轻享月卡或进阶月卡。",
       "进入 mock 支付页点击支付成功。",
       "返回会员中心查看会员档位、星力和钱包流水。",
     ],

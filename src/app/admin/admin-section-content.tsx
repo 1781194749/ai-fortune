@@ -110,9 +110,9 @@ function initials(value: string) {
 }
 
 function tierLabel(tier: string) {
-  if (tier === "YEARLY") return "年度会员";
-  if (tier === "PRO" || tier === "PREMIUM") return "进阶会员";
-  if (tier === "MONTHLY") return "月度会员";
+  if (tier === "YEARLY") return "尊享月卡";
+  if (tier === "PRO" || tier === "PREMIUM") return "进阶月卡";
+  if (tier === "MONTHLY") return "轻享月卡";
   if (tier === "TRIAL") return "体验会员";
   return "免费用户";
 }
@@ -600,7 +600,7 @@ export function AdminUsers({
     <div className="flex flex-col gap-6 p-4 lg:p-6">
       <div className="grid gap-4 md:grid-cols-3">
         <MetricCard label="用户总数" value={formatNumber(data.users.length)} detail="当前数据库账户" icon={Users} />
-        <MetricCard label="会员用户" value={formatNumber(data.metrics.activeMembers)} detail="体验卡及以上等级" icon={UserCheck} tone="positive" />
+        <MetricCard label="会员用户" value={formatNumber(data.metrics.activeMembers)} detail="付费月卡用户" icon={UserCheck} tone="positive" />
         <MetricCard label="用户总消费" value={formatPrice(data.metrics.grossCents)} detail={`${data.metrics.paidUsers} 位付费用户`} icon={Landmark} tone="brand" />
       </div>
 

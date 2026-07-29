@@ -9,13 +9,20 @@ import { spendStars } from "@/lib/mock-payment-store";
 import { getUserMockOrders } from "@/lib/mock-payment-store";
 import { analyzePalmImage } from "@/lib/palm";
 import {
+  PALM_IMAGE_SERVICE_UNAVAILABLE_BODY,
+  toCustomerPalmImageIssue,
+  toPublicPalmImage,
+} from "@/lib/palm-image-public";
+import { publicApiErrorResponse } from "@/lib/public-api-error";
+import {
   createMockReport,
   getUserMockReports,
   updateMockReport,
 } from "@/lib/report-store";
+import { toCustomerReport } from "@/lib/report-public-view";
 import { createSession, getSession } from "@/lib/session";
 
-export async function POST(request: Request) {
+async function handlePost(request: Request) {
   const session = await getSession();
 
   if (!session) {
@@ -66,6 +73,22 @@ export async function POST(request: Request) {
     focus: body?.focus,
     userId: session.userId,
   });
+
+  if (!reading.usable) {
+    const issueStatus = reading.imageStatus === "invalid_image"
+      ? "invalid_image"
+      : "unverified";
+    const customerIssue = toCustomerPalmImageIssue(issueStatus);
+
+    return Response.json(
+      {
+        ok: false,
+        ...customerIssue,
+      },
+      { status: reading.imageStatus === "invalid_image" ? 422 : 503 },
+    );
+  }
+
   const report = await createMockReport({
     userId: session.userId,
     type: "PALM",
@@ -81,6 +104,8 @@ export async function POST(request: Request) {
       image,
       signals: reading.signals,
       analyzer: reading.analyzer,
+      imageStatus: reading.imageStatus,
+      imageAssessment: reading.imageAssessment,
       provider: reading.provider,
       model: reading.model,
       tokensIn: reading.tokensIn,
@@ -139,7 +164,7 @@ export async function POST(request: Request) {
         "校验手相图片",
         "读取会员手相额度",
         "读取图片档案",
-        reading.provider === "openai" ? "调用视觉模型" : "本地降级分析",
+        "分析手相图片",
         "生成手相报告",
       ],
       cost: 0,
@@ -150,8 +175,8 @@ export async function POST(request: Request) {
         remainingBefore: memberEntitlements.palmQuota.remaining,
         remainingAfter: spendEntitlement.balance.remaining,
       },
-      image,
-      report,
+      image: toPublicPalmImage(image),
+      report: toCustomerReport(report),
     });
   }
 
@@ -181,12 +206,25 @@ export async function POST(request: Request) {
     steps: [
       "校验手相图片",
       "读取图片档案",
-      reading.provider === "openai" ? "调用视觉模型" : "本地降级分析",
+      "分析手相图片",
       "生成手相报告",
     ],
     cost,
     balanceAfter: spendResult.nextSession.starBalance,
-    image,
-    report,
+    image: toPublicPalmImage(image),
+    report: toCustomerReport(report),
   });
+}
+
+export async function POST(request: Request) {
+  try {
+    return await handlePost(request);
+  } catch (error) {
+    return publicApiErrorResponse(error, {
+      context: "create palm report",
+      message: "本次手相分析未能完成，请稍后重试。",
+      status: 503,
+      unavailableMessage: PALM_IMAGE_SERVICE_UNAVAILABLE_BODY.message,
+    });
+  }
 }

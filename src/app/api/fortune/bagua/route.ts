@@ -1,11 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { checkEntitlement, getResolvedStarCost } from "@/lib/entitlements";
 import { buildBaguaReading, generateBagua } from "@/lib/bagua";
+import { toPublicBaguaChart } from "@/lib/fortune-chart-public";
 import { spendStars } from "@/lib/mock-payment-store";
 import { createMockReport } from "@/lib/report-store";
+import { toCustomerReport } from "@/lib/report-public-view";
+import { publicApiErrorResponse } from "@/lib/public-api-error";
 import { createSession, getSession } from "@/lib/session";
 
-export async function POST(request: Request) {
+async function createBaguaResponse(request: Request) {
   const session = await getSession();
 
   if (!session) {
@@ -93,7 +96,20 @@ export async function POST(request: Request) {
     steps: ["确定问事主题", "生成六爻卦象", "定位六十四卦", "识别动爻互错综", "生成问事建议"],
     cost,
     balanceAfter: spendResult.nextSession.starBalance,
-    chart,
-    report,
+    chart: toPublicBaguaChart(chart),
+    report: toCustomerReport(report),
   });
+}
+
+export async function POST(request: Request) {
+  try {
+    return await createBaguaResponse(request);
+  } catch (error) {
+    return publicApiErrorResponse(error, {
+      context: "create bagua report",
+      message: "本次八卦问事未能完成，请稍后重试。",
+      status: 503,
+      unavailableMessage: "报告服务暂时不可用，请稍后重试。",
+    });
+  }
 }

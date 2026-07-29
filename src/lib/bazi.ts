@@ -205,7 +205,7 @@ function getTenGod(dayStem: string, targetStem: string) {
   }
 
   if (targetStem === dayStem) {
-    return "日主";
+    return "比肩";
   }
 
   if (targetElement === dayElement) {
@@ -251,7 +251,7 @@ function normalizeGender(gender?: string) {
     return { value: 1, label: "男命" };
   }
 
-  return { value: 1, label: "未填写，按男命顺逆规则暂排" };
+  return { value: null, label: "未填写，暂不排大运顺逆与当前大运" };
 }
 
 function buildWeightedCounts(pillars: Array<{ heavenlyStem: string; hiddenStems: string[] }>) {
@@ -445,11 +445,45 @@ function summarizeLuckGanZhi(dayStem: string, ganZhi: string) {
 
 function buildLuck(input: {
   eightChar: EightChar;
-  genderValue: number;
+  genderValue: number | null;
   dayStem: string;
   natalBranches: string[];
 }) {
   const year = currentYear();
+  const annual = Array.from({ length: 6 }, (_, index) => {
+    const flowYear = year + index;
+    const ganZhi = yearGanZhi(flowYear);
+    const summary = summarizeLuckGanZhi(input.dayStem, ganZhi);
+    const branchHits = input.natalBranches
+      .filter((branch) => branch === summary.zhi)
+      .map((branch) => `${branch}伏吟`);
+
+    for (const [first, second] of relationPairs.clashes) {
+      if (summary.zhi && ((summary.zhi === first && input.natalBranches.includes(second)) || (summary.zhi === second && input.natalBranches.includes(first)))) {
+        branchHits.push(`${summary.zhi}${summary.zhi === first ? second : first}冲`);
+      }
+    }
+
+    return {
+      year: flowYear,
+      ganZhi,
+      ...summary,
+      branchSignals: branchHits,
+      advice: summary.tenGod
+        ? `${flowYear} 年以「${summary.tenGod}」为显性主题，${(tenGodAdvice[summary.tenGod] ?? "结合当年目标观察资源和责任变化").replace(/[。；;]+$/, "")}${branchHits.length > 0 ? `；同时触发 ${branchHits.join("、")}。` : "。"}`
+        : "年度干支需要结合当年现实目标观察。",
+    };
+  });
+
+  if (input.genderValue === null) {
+    return {
+      start: null,
+      daYun: [],
+      currentDaYun: undefined,
+      annual,
+    };
+  }
+
   const yun = input.eightChar.getYun(input.genderValue);
   const daYun = yun.getDaYun(10).slice(1).map((item) => {
     const ganZhi = item.getGanZhi();
@@ -473,30 +507,6 @@ function buildLuck(input: {
       advice: summary.tenGod
         ? `${ganZhi}大运透出「${summary.tenGod}」，重点看${tenGodAdvice[summary.tenGod] ?? "阶段资源和责任变化"}`
         : "起运前后以原局基础为主，先看家庭、学习和底层节奏。",
-    };
-  });
-  const annual = Array.from({ length: 6 }, (_, index) => {
-    const flowYear = year + index;
-    const ganZhi = yearGanZhi(flowYear);
-    const summary = summarizeLuckGanZhi(input.dayStem, ganZhi);
-    const branchHits = input.natalBranches
-      .filter((branch) => branch === summary.zhi)
-      .map((branch) => `${branch}伏吟`);
-
-    for (const [first, second] of relationPairs.clashes) {
-      if (summary.zhi && ((summary.zhi === first && input.natalBranches.includes(second)) || (summary.zhi === second && input.natalBranches.includes(first)))) {
-        branchHits.push(`${summary.zhi}${summary.zhi === first ? second : first}冲`);
-      }
-    }
-
-    return {
-      year: flowYear,
-      ganZhi,
-      ...summary,
-      branchSignals: branchHits,
-      advice: summary.tenGod
-        ? `${flowYear} 年以「${summary.tenGod}」为显性主题，${branchHits.length > 0 ? `同时触发 ${branchHits.join("、")}。` : "可结合当年目标做节奏调整。"}`
-        : "年度干支需要结合当年现实目标观察。",
     };
   });
 
@@ -649,6 +659,12 @@ export function calculateBazi(input: BaziInput) {
   return {
     input,
     solar: solar.toYmdHms(),
+    timeStandard: {
+      basis: "local_standard_time",
+      birthPlace: input.birthPlace,
+      trueSolarTimeAdjusted: false,
+      note: "按用户输入的出生地当地标准钟表时间排盘，当前未做经度或真太阳时校正；接近时辰边界时需人工复核。",
+    },
     lunar: lunar.toString(),
     zodiac: lunar.getYearShengXiao(),
     bazi,
@@ -682,7 +698,7 @@ export function buildBaziReading(result: ReturnType<typeof calculateBazi>) {
   const usefulText = result.dayMaster.usefulElements.join("、");
   const avoidText = result.dayMaster.avoidElements.length > 0
     ? result.dayMaster.avoidElements.join("、")
-    : "无明显单一忌向";
+    : "无明显单一过量方向";
   const countText = wuxingOrder
     .map((element) => `${element}:${result.weightedCounts[element]}`)
     .join(" / ");
@@ -692,6 +708,7 @@ export function buildBaziReading(result: ReturnType<typeof calculateBazi>) {
     .map(([god, count]) => `${god}${count}`)
     .join("、");
   const currentLuck = result.luck.currentDaYun;
+  const luckStart = result.luck.start;
   const branchRelationText = result.branchRelations.length > 0
     ? result.branchRelations
         .slice(0, 4)
@@ -706,11 +723,12 @@ export function buildBaziReading(result: ReturnType<typeof calculateBazi>) {
     `命盘结构：五行加权分布为 ${countText}；偏强为「${result.strongest}」，相对需要照顾「${weakestText}」。${result.dayMaster.explanation}`,
     `十神重点：${topTenGod || "十神分布较平均"}。这代表本盘在表达、资源、压力、财务或人际上的外显方式，需要结合具体问题使用。`,
     `藏干与地支：四柱地支关系显示「${branchRelationText}」。合象更利整合，冲害更提示变化、暗耗或边界议题。`,
-    `喜用方向：优先照顾「${usefulText}」，谨慎过度放大「${avoidText}」。行动建议：${focusAdvice}`,
-    currentLuck
-      ? `大运节奏：${result.luck.start.direction}，起运约 ${result.luck.start.solar}；当前大运为「${currentLuck.ganZhi}」（${currentLuck.startYear}-${currentLuck.endYear}），${currentLuck.advice}`
-      : `大运节奏：${result.luck.start.direction}，起运约 ${result.luck.start.solar}。`,
+    `结构调节方向：依据当前简化旺衰模型，优先照顾「${usefulText}」，谨慎过度放大「${avoidText}」。这不是脱离具体问题的固定喜忌；行动参考：${focusAdvice}`,
+    luckStart && currentLuck
+      ? `大运节奏：${luckStart.direction}，起运约 ${luckStart.solar}；当前大运为「${currentLuck.ganZhi}」（${currentLuck.startYear}-${currentLuck.endYear}），${currentLuck.advice}`
+      : "大运节奏：未提供性别，本次不推定大运顺逆、起运时间和当前大运；补充性别后再排。",
     `未来流年参考：${annualText}。流年只适合作阶段节奏观察，要结合实际选择、环境和长期反馈。`,
+    `排盘口径：${result.timeStandard.note}`,
     `辅星参考：胎元 ${result.auxiliary.taiYuan}（${result.auxiliary.taiYuanNaYin}），命宫 ${result.auxiliary.mingGong}（${result.auxiliary.mingGongNaYin}），身宫 ${result.auxiliary.shenGong}（${result.auxiliary.shenGongNaYin}）。`,
     "本报告仅供娱乐、文化参考和自我探索，不构成医疗、投资、法律或重大人生决策建议。",
   ].join("\n\n");

@@ -52,10 +52,16 @@ if (!result.ok) {
   process.exit(1);
 }
 
-console.log(
-  `Prompt quality checks passed (${result.checkCount} checks, ${result.sampleCount} curated, ${result.generatedCaseCount} generated, semantic=${result.semanticMode}, gate=${result.goNoGo}).`,
-);
+const humanReviewSummary = result.humanReviewRequired
+  ? `${result.humanReviewPassedCount}/${result.sampleCount} passed (${((result.humanReviewPassRate ?? 0) * 100).toFixed(1)}%)`
+  : "not required in this run";
+console.log(result.gateOk
+  ? `Prompt quality gate passed (${result.checkCount} checks, ${result.sampleCount} curated, ${result.generatedCaseCount} generated, semantic=${result.semanticMode}, human=${humanReviewSummary}, gate=${result.goNoGo}).`
+  : `Prompt checks passed; release gate remains blocked (${result.checkCount} checks, ${result.sampleCount} curated, ${result.generatedCaseCount} generated, semantic=${result.semanticMode}, human=${humanReviewSummary}, gate=${result.goNoGo}).`);
 if (result.reviewOutput) {
-  console.log(`Human review artifact: ${result.reviewOutput}`);
+  console.log(`Human review candidate artifact: ${result.reviewOutput}`);
+}
+if (result.humanReviewInput) {
+  console.log(`Validated human review input: ${result.humanReviewInput}`);
 }
 console.log(`Human review fields: ${result.humanReviewFields.join(", ")}`);

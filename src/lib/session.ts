@@ -10,6 +10,11 @@ export type SessionPayload = {
   emailMasked: string;
   tier: MembershipTierCode;
   starBalance: number;
+  chatQuota?: number;
+  chatUsed?: number;
+  profileLimit?: number;
+  quotaPeriodStart?: string;
+  adminEligible?: boolean;
   expiresAt: string;
 };
 
@@ -77,7 +82,12 @@ function decodeSession(value: string | undefined): SessionPayload | null {
       return null;
     }
 
-    return payload;
+    return {
+      ...payload,
+      // Sessions created before this trust marker existed must re-authenticate
+      // before they can be used for privileged operations.
+      adminEligible: payload.adminEligible === true,
+    };
   } catch {
     return null;
   }
@@ -85,11 +95,16 @@ function decodeSession(value: string | undefined): SessionPayload | null {
 
 export async function createSession(input: Omit<SessionPayload, "expiresAt">) {
   const expiresAt = new Date(Date.now() + sessionMaxAgeSeconds * 1000);
+  const cookieStore = await cookies();
+  const existing = decodeSession(cookieStore.get(sessionCookieName)?.value);
+  const adminEligible =
+    input.adminEligible ??
+    (existing?.userId === input.userId ? existing.adminEligible === true : false);
   const session = encodeSession({
     ...input,
+    adminEligible,
     expiresAt: expiresAt.toISOString(),
   });
-  const cookieStore = await cookies();
 
   cookieStore.set(sessionCookieName, session, {
     httpOnly: true,
@@ -112,12 +127,20 @@ export async function getSession() {
   const accountState = await getPersistedAccountState(session.userId, {
     tier: session.tier,
     starBalance: session.starBalance,
+    chatQuota: session.chatQuota,
+    chatUsed: session.chatUsed,
+    profileLimit: session.profileLimit,
+    quotaPeriodStart: session.quotaPeriodStart,
   });
 
   return {
     ...session,
     tier: accountState.tier,
     starBalance: accountState.starBalance,
+    chatQuota: accountState.chatQuota,
+    chatUsed: accountState.chatUsed,
+    profileLimit: accountState.profileLimit,
+    quotaPeriodStart: accountState.quotaPeriodStart,
   };
 }
 

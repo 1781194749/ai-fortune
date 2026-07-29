@@ -137,10 +137,10 @@ const personas = [
     need: "想知道对方想法、复合可能、关系走向。",
     payTrigger: "问题有情绪张力，愿意为即时安慰和下一步建议付费。",
     entryOffer: "塔罗爱情牌阵",
-    upgradePath: ["AI 情感追问", "月度会员", "关系主题深度报告"],
+    upgradePath: ["AI 情感追问", "轻享月卡", "关系主题深度报告"],
     targetProducts: ["tarot_love", "monthly", "composite_report"],
     status: "ready",
-    action: "首页和分享页优先放塔罗爱情牌阵，用低客单拉首付，再引导月度会员追问。",
+    action: "首页和分享页优先放塔罗爱情牌阵，用低客单拉首付，再引导轻享月卡追问。",
   },
   {
     id: "career_planning",
@@ -149,7 +149,7 @@ const personas = [
     need: "跳槽、事业、财运、年度规划，需要结构化报告。",
     payTrigger: "遇到选择节点，希望得到可保存、可反复看的解释和行动建议。",
     entryOffer: "八字五行详批",
-    upgradePath: ["年度大报告", "进阶会员", "年度会员"],
+    upgradePath: ["年度大报告", "进阶月卡", "尊享月卡"],
     targetProducts: ["bazi_detail", "yearly_report", "pro_monthly"],
     status: "ready",
     action: "把八字详批和年度报告做成高信任入口，强调报告沉淀和行动建议。",
@@ -161,8 +161,8 @@ const personas = [
     need: "塔罗、八字、手相都想体验，愿意比较不同体系。",
     payTrigger: "多工具组合带来更强专业感，适合会员与综合命盘。",
     entryOffer: "手相 + 八字综合报告",
-    upgradePath: ["进阶会员", "长期档案", "每月主题报告"],
-    targetProducts: ["composite_report", "pro_monthly", "yearly"],
+    upgradePath: ["进阶月卡", "长期档案", "每月主题报告"],
+    targetProducts: ["composite_report", "pro_monthly", "premium_monthly"],
     status: "warning",
     action: "综合报告要补足手相和深度报告成本样本，再作为高客单主推。",
   },
@@ -173,8 +173,8 @@ const personas = [
     need: "好玩、好看、能晒，愿意先免费体验再小额付费。",
     payTrigger: "海报、今日塔罗、五行人格和手相图形成社交传播。",
     entryOffer: "今日塔罗 / 手相简析",
-    upgradePath: ["体验卡", "手相简析", "月度会员"],
-    targetProducts: ["trial_7d", "palm_brief", "monthly"],
+    upgradePath: ["免费版", "手相简析", "轻享月卡"],
+    targetProducts: ["palm_brief", "monthly"],
     status: "warning",
     action: "先收集分享落地到支付样本；ROI 未稳定前限制投放预算。",
   },
@@ -185,8 +185,8 @@ const personas = [
     need: "取名、择日、合婚、重大选择，希望有更完整解释。",
     payTrigger: "强需求、低频高客单，愿意为专项报告和人工增强服务付费。",
     entryOffer: "年度大报告",
-    upgradePath: ["年度会员", "专项报告预留", "人工咨询预留"],
-    targetProducts: ["yearly_report", "yearly", "composite_report"],
+    upgradePath: ["尊享月卡", "专项报告预留", "人工咨询预留"],
+    targetProducts: ["yearly_report", "premium_monthly", "composite_report"],
     status: "warning",
     action: "第一版先用年度报告承接，不急着承诺真人咨询或复杂专项服务。",
   },
@@ -455,7 +455,7 @@ function guardrails(input: {
       current: `${input.productSummary.ready} ready / ${input.productSummary.warning} warning / ${input.productSummary.blocking} blocking`,
       action:
         packageStatus === "ready"
-          ? "保持体验卡、月度会员和深度报告作为首发主梯度。"
+          ? "保持免费版、轻享月卡和深度报告作为首发主梯度。"
           : "先修复 warning/blocking 商品，再决定首页主推顺序。",
     },
   ];

@@ -6,7 +6,7 @@ import {
 } from "@/lib/checkout-experiment";
 import { quotePromotion, recordPromotionEvent } from "@/lib/promo-code";
 import { getRuntimeProduct } from "@/lib/product-config";
-import { isDatabaseUnavailableError } from "@/lib/prisma";
+import { publicApiErrorResponse } from "@/lib/public-api-error";
 import { getSession } from "@/lib/session";
 import { MembershipDowngradeError } from "@/lib/membership-lifecycle";
 import {
@@ -76,18 +76,19 @@ export async function POST(request: Request) {
         return Response.json(
           {
             ok: false,
-            code: error.code,
-            message: error.message,
+            message: "当前为更高等级会员，暂不能购买该方案，请在当前会员到期后再试。",
             availableAt: error.availableAt,
           },
           { status: 409 },
         );
       }
 
-      return Response.json(
-        { ok: false, message: error instanceof Error ? error.message : "订单创建失败。" },
-        { status: 503 },
-      );
+      return publicApiErrorResponse(error, {
+        context: "create mock payment order",
+        message: "订单创建失败，请稍后重试。",
+        status: 503,
+        unavailableMessage: "订单服务暂时不可用，请稍后重试。",
+      });
     }
     await settleOptionalSideEffects("mock order created telemetry", [
       recordCheckoutExperimentOrderCreated({
@@ -130,13 +131,11 @@ export async function POST(request: Request) {
       });
     }
 
-    if (isDatabaseUnavailableError(error)) {
-      return Response.json(
-        { ok: false, code: error.code, message: error.message },
-        { status: error.status },
-      );
-    }
-
-    throw error;
+    return publicApiErrorResponse(error, {
+      context: "prepare mock payment order",
+      message: "订单创建失败，请稍后重试。",
+      status: 503,
+      unavailableMessage: "订单服务暂时不可用，请稍后重试。",
+    });
   }
 }

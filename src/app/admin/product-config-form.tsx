@@ -83,6 +83,8 @@ export function AdminProductConfigForm({
   const [priceYuan, setPriceYuan] = useState(centsToYuanInput(row.effective.priceCents));
   const [starGrant, setStarGrant] = useState(String(row.effective.starGrant ?? 0));
   const [durationDays, setDurationDays] = useState(String(row.effective.durationDays ?? 0));
+  const [chatQuota, setChatQuota] = useState(String(row.effective.chatQuota ?? 0));
+  const [profileLimit, setProfileLimit] = useState(String(row.effective.profileLimit ?? 0));
   const [reportQuota, setReportQuota] = useState(String(row.effective.reportQuota ?? 0));
   const [palmQuota, setPalmQuota] = useState(String(row.effective.palmQuota ?? 0));
   const [description, setDescription] = useState(row.effective.description);
@@ -93,6 +95,8 @@ export function AdminProductConfigForm({
     const parsedPriceCents = parsePriceCents(priceYuan);
     const parsedStarGrant = parseNonNegativeInteger(starGrant);
     const parsedDurationDays = parseNonNegativeInteger(durationDays);
+    const parsedChatQuota = parseNonNegativeInteger(chatQuota);
+    const parsedProfileLimit = parseNonNegativeInteger(profileLimit);
     const parsedReportQuota = parseNonNegativeInteger(reportQuota);
     const parsedPalmQuota = parseNonNegativeInteger(palmQuota);
     const normalizedName = name.trim();
@@ -113,6 +117,8 @@ export function AdminProductConfigForm({
         Number.isNaN(parsedPriceCents) ||
         Number.isNaN(parsedStarGrant) ||
         Number.isNaN(parsedDurationDays) ||
+        Number.isNaN(parsedChatQuota) ||
+        Number.isNaN(parsedProfileLimit) ||
         Number.isNaN(parsedReportQuota) ||
         Number.isNaN(parsedPalmQuota)
       ) {
@@ -140,6 +146,8 @@ export function AdminProductConfigForm({
                   priceCents: parsedPriceCents,
                   starGrant: parsedStarGrant,
                   durationDays: parsedDurationDays,
+                  chatQuota: parsedChatQuota,
+                  profileLimit: parsedProfileLimit,
                   reportQuota: parsedReportQuota,
                   palmQuota: parsedPalmQuota,
                   description: normalizedDescription,
@@ -194,7 +202,7 @@ export function AdminProductConfigForm({
         </label>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-3">
         <label className="grid gap-1.5 text-xs font-medium text-muted-foreground">
           星力
           <input
@@ -209,6 +217,24 @@ export function AdminProductConfigForm({
           <input
             value={durationDays}
             onChange={(event) => setDurationDays(event.target.value)}
+            inputMode="numeric"
+            className="h-9 rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/20"
+          />
+        </label>
+        <label className="grid gap-1.5 text-xs font-medium text-muted-foreground">
+          本月问答次数
+          <input
+            value={chatQuota}
+            onChange={(event) => setChatQuota(event.target.value)}
+            inputMode="numeric"
+            className="h-9 rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/20"
+          />
+        </label>
+        <label className="grid gap-1.5 text-xs font-medium text-muted-foreground">
+          档案人数上限
+          <input
+            value={profileLimit}
+            onChange={(event) => setProfileLimit(event.target.value)}
             inputMode="numeric"
             className="h-9 rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/20"
           />

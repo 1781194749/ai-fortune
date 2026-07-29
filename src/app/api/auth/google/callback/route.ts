@@ -10,7 +10,7 @@ import { maskEmail, normalizeEmail } from "@/lib/email-auth";
 import { createSession } from "@/lib/session";
 import { completeInviteRewardForLogin } from "@/lib/invite-rewards";
 import { settleOptionalSideEffects } from "@/lib/optional-side-effects";
-import { isDatabaseUnavailableError } from "@/lib/prisma";
+import { logPublicApiError } from "@/lib/public-api-error";
 import { recordShareAttributionConversion } from "@/lib/share-attribution";
 import { ensureGoogleUserAndGetState } from "@/lib/user-store";
 import { resolvePostLoginRedirect } from "@/lib/post-login-redirect";
@@ -53,6 +53,11 @@ export async function GET(request: Request) {
       emailMasked: maskEmail(email),
       tier: account.tier,
       starBalance: account.starBalance,
+      chatQuota: account.chatQuota,
+      chatUsed: account.chatUsed,
+      profileLimit: account.profileLimit,
+      quotaPeriodStart: account.quotaPeriodStart,
+      adminEligible: true,
     });
     await settleOptionalSideEffects("google login telemetry", [
       recordShareAttributionConversion({ event: "login", userId: account.userId }),
@@ -69,16 +74,7 @@ export async function GET(request: Request) {
 
     return NextResponse.redirect(new URL(redirectTo, publicOrigin));
   } catch (error) {
-    if (isDatabaseUnavailableError(error)) {
-      return NextResponse.redirect(
-        new URL("/login?googleError=database_unavailable", publicOrigin),
-      );
-    }
-
-    console.error(
-      "Google OAuth callback failed:",
-      error instanceof Error ? error.message : "Unknown error",
-    );
+    logPublicApiError("complete Google login", error);
     return NextResponse.redirect(new URL("/login?googleError=callback_failed", publicOrigin));
   }
 }

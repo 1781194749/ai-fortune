@@ -3,12 +3,13 @@ import {
   isValidEmail,
   maskEmail,
   normalizeEmail,
+  verifyEmailAuthBypass,
   verifyEmailCode,
 } from "@/lib/email-auth";
 import { createSession } from "@/lib/session";
 import { completeInviteRewardForLogin } from "@/lib/invite-rewards";
 import { settleOptionalSideEffects } from "@/lib/optional-side-effects";
-import { isDatabaseUnavailableError } from "@/lib/prisma";
+import { publicApiErrorResponse } from "@/lib/public-api-error";
 import { recordShareAttributionConversion } from "@/lib/share-attribution";
 import { ensureEmailUserAndGetState } from "@/lib/user-store";
 import { resolvePostLoginRedirect } from "@/lib/post-login-redirect";
@@ -27,7 +28,16 @@ export async function POST(request: Request) {
     );
   }
 
-  if (!verifyEmailCode(email, code)) {
+  const verification =
+    verifyEmailCode(email, code) ??
+    verifyEmailAuthBypass({
+      request,
+      email,
+      code,
+      returnTo: body?.returnTo,
+    });
+
+  if (!verification) {
     return Response.json(
       { ok: false, message: "验证码错误或已过期。" },
       { status: 401 },
@@ -46,6 +56,11 @@ export async function POST(request: Request) {
       emailMasked: maskEmail(email),
       tier: accountState.tier,
       starBalance: accountState.starBalance,
+      chatQuota: accountState.chatQuota,
+      chatUsed: accountState.chatUsed,
+      profileLimit: accountState.profileLimit,
+      quotaPeriodStart: accountState.quotaPeriodStart,
+      adminEligible: verification.adminEligible,
     });
     await settleOptionalSideEffects("email login telemetry", [
       recordShareAttributionConversion({
@@ -68,13 +83,10 @@ export async function POST(request: Request) {
       redirectTo,
     });
   } catch (error) {
-    if (isDatabaseUnavailableError(error)) {
-      return Response.json(
-        { ok: false, code: error.code, message: error.message },
-        { status: error.status },
-      );
-    }
-
-    throw error;
+    return publicApiErrorResponse(error, {
+      context: "verify email login",
+      message: "登录未完成，请稍后重试。",
+      unavailableMessage: "登录服务暂时不可用，请稍后重试。",
+    });
   }
 }

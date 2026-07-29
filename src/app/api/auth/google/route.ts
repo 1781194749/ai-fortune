@@ -7,6 +7,7 @@ import {
   getPublicAppOrigin,
   isGoogleAuthConfigured,
 } from "@/lib/google-auth";
+import { logPublicApiError } from "@/lib/public-api-error";
 import { sanitizeReturnTo } from "@/lib/return-to";
 
 const attemptCookie = "xuanji_google_oauth";
@@ -16,23 +17,28 @@ export async function GET(request: Request) {
   const publicOrigin = getPublicAppOrigin(requestUrl.origin);
   const returnTo = sanitizeReturnTo(requestUrl.searchParams.get("returnTo") ?? undefined);
 
-  if (!isGoogleAuthConfigured()) {
-    return NextResponse.redirect(
-      new URL(`/login?googleError=not_configured&returnTo=${encodeURIComponent(returnTo)}`, publicOrigin),
-    );
+  try {
+    if (!isGoogleAuthConfigured()) {
+      return NextResponse.redirect(
+        new URL(`/login?googleError=unavailable&returnTo=${encodeURIComponent(returnTo)}`, publicOrigin),
+      );
+    }
+
+    const { state, codeVerifier, codeChallenge } = createGoogleOAuthAttempt();
+    const redirectUri = getGoogleRedirectUri(requestUrl.origin);
+    const authorizationUrl = buildGoogleAuthorizationUrl({ redirectUri, state, codeChallenge });
+    const cookieStore = await cookies();
+    cookieStore.set(attemptCookie, Buffer.from(JSON.stringify({ state, codeVerifier, returnTo })).toString("base64url"), {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/api/auth/google",
+      maxAge: 10 * 60,
+    });
+
+    return NextResponse.redirect(authorizationUrl);
+  } catch (error) {
+    logPublicApiError("start Google login", error);
+    return NextResponse.redirect(new URL("/login?googleError=callback_failed", publicOrigin));
   }
-
-  const { state, codeVerifier, codeChallenge } = createGoogleOAuthAttempt();
-  const redirectUri = getGoogleRedirectUri(requestUrl.origin);
-  const authorizationUrl = buildGoogleAuthorizationUrl({ redirectUri, state, codeChallenge });
-  const cookieStore = await cookies();
-  cookieStore.set(attemptCookie, Buffer.from(JSON.stringify({ state, codeVerifier, returnTo })).toString("base64url"), {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/api/auth/google",
-    maxAge: 10 * 60,
-  });
-
-  return NextResponse.redirect(authorizationUrl);
 }

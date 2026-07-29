@@ -2,21 +2,15 @@
 
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
-  ArrowRight,
   BadgeCheck,
   CircleDashed,
   CircleDotDashed,
-  FileText,
   GitCommitHorizontal,
   GitMerge,
-  ShieldAlert,
   Sparkles,
 } from "lucide-react";
-import Link from "next/link";
-import type { ChatAnswerShape, ChatConclusion, ChatIntent } from "@/lib/ai-orchestrator";
-import { getChatServiceMode, type ChatServiceMode } from "@/lib/chat-service";
+import type { ChatServiceIntent } from "@/lib/chat-service";
 import type { ChatProgressData, ChatRitualItem } from "@/lib/chat-ui-message";
-import type { FortuneAnswer } from "@/lib/prompts/contracts";
 
 const processSteps = [
   { id: "classify", fallback: "辨识问意" },
@@ -183,16 +177,16 @@ function GeneralRitual({ items }: { items: ChatRitualItem[] }) {
 
 export function ChatRitual({
   progress,
-  intent,
+  method,
   loading,
 }: {
   progress: ChatProgressData[];
-  intent: ChatIntent | null;
+  method: ChatServiceIntent | null;
   loading: boolean;
 }) {
   const reduced = Boolean(useReducedMotion());
   const items = latestRitualItems(progress);
-  const currentIntent = progress.findLast((event) => event.intent)?.intent ?? intent ?? "general";
+  const currentMethod = progress.findLast((event) => event.method)?.method ?? method ?? "general";
   const latestByStep = new Map(progress.map((event) => [event.step, event]));
 
   return (
@@ -227,105 +221,14 @@ export function ChatRitual({
         })}
       </div>
 
-      {items.length > 0 || currentIntent === "tarot" || currentIntent === "bagua" || currentIntent === "bazi" ? (
+      {items.length > 0 || currentMethod === "tarot" || currentMethod === "bagua" || currentMethod === "bazi" ? (
         <div className="mt-5">
-          {currentIntent === "tarot" ? <TarotRitual items={items} reduced={reduced} /> : null}
-          {currentIntent === "bagua" ? <BaguaRitual items={items} reduced={reduced} /> : null}
-          {currentIntent === "bazi" ? <BaziRitual items={items} reduced={reduced} /> : null}
-          {currentIntent === "general" || currentIntent === "palm" ? <GeneralRitual items={items} /> : null}
+          {currentMethod === "tarot" ? <TarotRitual items={items} reduced={reduced} /> : null}
+          {currentMethod === "bagua" ? <BaguaRitual items={items} reduced={reduced} /> : null}
+          {currentMethod === "bazi" ? <BaziRitual items={items} reduced={reduced} /> : null}
+          {currentMethod === "general" || currentMethod === "palm" ? <GeneralRitual items={items} /> : null}
         </div>
       ) : null}
-    </section>
-  );
-}
-
-export function ChatConclusionCard({
-  conclusion,
-  serviceMode,
-  answerShape,
-  answerStatus,
-  onFollowUp,
-}: {
-  conclusion: ChatConclusion;
-  serviceMode: ChatServiceMode;
-  answerShape?: ChatAnswerShape;
-  answerStatus?: FortuneAnswer["status"];
-  onFollowUp: (question: string) => void;
-}) {
-  const mode = getChatServiceMode(serviceMode);
-  const modeLabel = answerShape === "safety_boundary"
-    ? "安全提示"
-    : answerShape === "missing_info"
-      ? "待补资料"
-      : mode.label;
-  const canGenerateDeepReport = answerShape !== "safety_boundary" &&
-    answerShape !== "missing_info" &&
-    answerShape !== "identity_boundary" &&
-    answerStatus !== "blocked" &&
-    answerStatus !== "needs_input";
-
-  return (
-    <section className="mt-7 rounded-lg border border-[#3a3529] bg-[#11110e] p-4 sm:p-5" aria-label="本轮结论卡">
-      <div className="flex items-center justify-between gap-3">
-        <p className="inline-flex items-center gap-2 text-xs font-semibold text-[#e0bd70]">
-          <BadgeCheck size={14} aria-hidden="true" />
-          本轮结论
-        </p>
-        <span className="text-[10px] text-[#6f685f]">{modeLabel}</span>
-      </div>
-      <p className="mt-3 text-base font-semibold leading-7 text-[#f1e8d8]">{conclusion.verdict}</p>
-
-      <div className="mt-5 grid gap-5 sm:grid-cols-2">
-        <div>
-          <p className="text-[10px] font-medium text-[#777168]">为什么</p>
-          <ol className="mt-2 space-y-2">
-            {conclusion.reasons.map((reason, index) => (
-              <li key={`${reason}-${index}`} className="flex gap-2 text-xs leading-6 text-[#bdb4a6]">
-                <span className="mt-1 flex size-4 shrink-0 items-center justify-center rounded-full bg-[#24231c] text-[9px] text-[#c9a35f]">{index + 1}</span>
-                <span>{reason}</span>
-              </li>
-            ))}
-          </ol>
-        </div>
-        <div className="space-y-4">
-          <div>
-            <p className="flex items-center gap-1.5 text-[10px] font-medium text-[#b87a68]">
-              <ShieldAlert size={12} aria-hidden="true" /> 最大风险
-            </p>
-            <p className="mt-2 text-xs leading-6 text-[#bda69f]">{conclusion.risk}</p>
-          </div>
-          <div>
-            <p className="text-[10px] font-medium text-[#6fae9e]">下一步</p>
-            <p className="mt-2 text-xs leading-6 text-[#adc8bf]">{conclusion.nextStep}</p>
-          </div>
-        </div>
-      </div>
-
-      <div className="mt-5 border-t border-[#292a24] pt-4">
-        <p className="text-[10px] text-[#706a61]">继续追问</p>
-        <div className="mt-2 grid gap-2 sm:grid-cols-3">
-          {conclusion.followUps.slice(0, 3).map((question) => (
-            <button
-              key={question}
-              type="button"
-              onClick={() => onFollowUp(question)}
-              className="group flex min-h-11 items-center justify-between gap-2 rounded-md border border-[#2e3029] px-3 py-2 text-left text-xs leading-5 text-[#aaa294] transition hover:border-[#c9a35f]/40 hover:bg-[#171713] hover:text-[#e4dac9]"
-            >
-              <span>{question}</span>
-              <ArrowRight size={13} className="shrink-0 text-[#676158] transition group-hover:translate-x-0.5 group-hover:text-[#c9a35f]" aria-hidden="true" />
-            </button>
-          ))}
-        </div>
-        {canGenerateDeepReport ? (
-          <Link
-            href="/reports/deep"
-            className="mt-3 inline-flex h-9 items-center gap-2 rounded-md px-2 text-xs font-medium text-[#d8b873] transition hover:bg-[#c9a35f]/8 hover:text-[#f0d49a]"
-          >
-            <FileText size={14} aria-hidden="true" />
-            生成深度报告
-          </Link>
-        ) : null}
-      </div>
     </section>
   );
 }

@@ -11,7 +11,8 @@ import {
   getMemberEntitlementSummary,
 } from "@/lib/member-entitlements";
 import { getUserMockOrders } from "@/lib/mock-payment-store";
-import { isDatabaseUnavailableError } from "@/lib/prisma";
+import { publicApiErrorResponse } from "@/lib/public-api-error";
+import { toCustomerReport } from "@/lib/report-public-view";
 import { getUserMockReports } from "@/lib/report-store";
 import { getSession } from "@/lib/session";
 
@@ -64,7 +65,7 @@ export async function POST(request: Request) {
     return Response.json(
       {
         ok: true,
-        report: result.report,
+        report: toCustomerReport(result.report),
         queued: result.queued,
         entitlement: result.entitlement,
       },
@@ -77,26 +78,22 @@ export async function POST(request: Request) {
       });
     }
 
-    if (isDatabaseUnavailableError(error)) {
-      return Response.json(
-        { ok: false, code: error.code, message: error.message },
-        { status: error.status },
-      );
-    }
-
     if (error instanceof InsufficientDeepReportEntitlementError) {
       return Response.json(
         {
           ok: false,
-          message: error.message,
+          message: "深度报告额度不足，请购买会员或单次报告。",
           entitlement: error.balance,
         },
         { status: 402 },
       );
     }
 
-    const message = error instanceof Error ? error.message : "会员报告额度生成失败。";
-
-    return Response.json({ ok: false, message }, { status: 503 });
+    return publicApiErrorResponse(error, {
+      context: "create report with member quota",
+      message: "会员报告生成失败，请稍后重试。",
+      status: 503,
+      unavailableMessage: "报告服务暂时不可用，请稍后重试。",
+    });
   }
 }

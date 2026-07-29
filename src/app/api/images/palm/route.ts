@@ -1,5 +1,9 @@
 import { createPalmImageUpload, getUserPalmImages } from "@/lib/image-upload-store";
-import { isDatabaseUnavailableError } from "@/lib/prisma";
+import {
+  PALM_IMAGE_SERVICE_UNAVAILABLE_BODY,
+  toPublicPalmImage,
+} from "@/lib/palm-image-public";
+import { publicApiErrorResponse } from "@/lib/public-api-error";
 import { getQiniuPublicUrl, isPalmImageKeyOwnedByUser } from "@/lib/qiniu";
 import { getSession } from "@/lib/session";
 
@@ -19,17 +23,15 @@ export async function GET() {
 
     return Response.json({
       ok: true,
-      images,
+      images: images.map(toPublicPalmImage),
     });
   } catch (error) {
-    if (isDatabaseUnavailableError(error)) {
-      return Response.json(
-        { ok: false, code: error.code, message: error.message },
-        { status: error.status },
-      );
-    }
-
-    throw error;
+    return publicApiErrorResponse(error, {
+      context: "list palm images",
+      message: "图片列表暂时无法读取，请稍后重试。",
+      status: 503,
+      unavailableMessage: PALM_IMAGE_SERVICE_UNAVAILABLE_BODY.message,
+    });
   }
 }
 
@@ -44,10 +46,8 @@ export async function POST(request: Request) {
     const body = (await request.json().catch(() => null)) as
       | {
           key?: string;
-          url?: string;
           contentType?: string;
           sizeBytes?: number;
-          originalName?: string;
           provider?: "qiniu" | "mock";
           hash?: string;
         }
@@ -55,15 +55,14 @@ export async function POST(request: Request) {
     const contentType = body?.contentType?.trim() ?? "";
     const sizeBytes = Number(body?.sizeBytes ?? 0);
     const key = body?.key?.trim() ?? "";
-    const imageUrl = body?.url?.trim() ?? "";
 
     if (!key) {
-      return Response.json({ ok: false, message: "图片 key 缺失。" }, { status: 400 });
+      return Response.json({ ok: false, message: "图片信息不完整，请重新上传。" }, { status: 400 });
     }
 
     if (!isPalmImageKeyOwnedByUser({ key, userId: session.userId })) {
       return Response.json(
-        { ok: false, message: "图片 key 与当前账号不匹配。" },
+        { ok: false, message: "这张图片不属于当前账号，请重新上传。" },
         { status: 403 },
       );
     }
@@ -94,11 +93,10 @@ export async function POST(request: Request) {
     const image = await createPalmImageUpload({
       userId: session.userId,
       qiniuKey: key,
-      url: qiniuPublicUrl || imageUrl || `mock://${key}`,
+      url: qiniuPublicUrl || `mock://${key}`,
       contentType,
       sizeBytes,
       metadata: {
-        originalName: body?.originalName?.trim(),
         provider: body?.provider ?? "mock",
         hash: body?.hash,
       },
@@ -106,16 +104,14 @@ export async function POST(request: Request) {
 
     return Response.json({
       ok: true,
-      image,
+      image: toPublicPalmImage(image),
     });
   } catch (error) {
-    if (isDatabaseUnavailableError(error)) {
-      return Response.json(
-        { ok: false, code: error.code, message: error.message },
-        { status: error.status },
-      );
-    }
-
-    throw error;
+    return publicApiErrorResponse(error, {
+      context: "create palm image record",
+      message: "图片信息暂时无法保存，请稍后重试。",
+      status: 503,
+      unavailableMessage: PALM_IMAGE_SERVICE_UNAVAILABLE_BODY.message,
+    });
   }
 }

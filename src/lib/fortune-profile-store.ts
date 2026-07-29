@@ -4,16 +4,26 @@ import { randomUUID } from "crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { calculateBazi, type BaziInput } from "@/lib/bazi";
-import { formatBirthDate, normalizeBirthCalendarType } from "@/lib/birth-calendar";
+import {
+  formatBirthDate,
+  getLunarPartsFromSolar,
+  lunarPartsToSolarYmd,
+  normalizeBirthCalendarType,
+  parseYmd,
+  toYmd,
+} from "@/lib/birth-calendar";
 import { assertDatabaseFallbackAllowed, tryPrisma } from "@/lib/prisma";
 import { ensureDbUser } from "@/lib/user-store";
 
 type NullableText = string | null;
 
 export type FortuneProfileInput = {
+  subjectKey?: string | null;
   name?: string | null;
   gender?: string | null;
   birthDate?: string | null;
+  lunarBirthDate?: string | null;
+  yinliBirthDate?: string | null;
   birthTime?: string | null;
   birthPlace?: string | null;
   calendarType?: string | null;
@@ -25,9 +35,12 @@ export type FortuneProfileInput = {
 export type FortuneProfileRecord = {
   id: string;
   userId: string;
+  subjectKey: string;
   name: NullableText;
   gender: NullableText;
   birthDate: NullableText;
+  lunarBirthDate: NullableText;
+  yinliBirthDate: NullableText;
   birthTime: NullableText;
   birthPlace: NullableText;
   calendarType: string;
@@ -47,9 +60,12 @@ export type FortuneProfileRecord = {
 type DbProfileLike = {
   id: string;
   userId: string;
+  subjectKey: string;
   name: string | null;
   gender: string | null;
   birthday: Date | null;
+  lunarBirthDate: string | null;
+  yinliBirthDate: string | null;
   birthTime: string | null;
   birthPlace: string | null;
   calendarType: string;
@@ -128,7 +144,10 @@ async function ensureLocalProfilesLoaded() {
 
         for (const profile of parsed.profiles) {
           if (isProfileRecord(profile)) {
-            fortuneProfiles.set(profile.userId, profile);
+            fortuneProfiles.set(`${profile.userId}:${profile.subjectKey ?? "self"}`, {
+              ...profile,
+              subjectKey: profile.subjectKey ?? "self",
+            });
           }
         }
       } catch (error) {
@@ -196,6 +215,26 @@ function cleanBirthDate(value: unknown) {
   return Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== text ? null : text;
 }
 
+function cleanCalendarDate(value: unknown) {
+  const text = cleanText(value, 10);
+  const parts = parseYmd(text);
+
+  if (!text || !parts || parts.month < 1 || parts.month > 12 || parts.day < 1 || parts.day > 30) {
+    return null;
+  }
+
+  return text;
+}
+
+function toStoredCalendarDate(parts: { year: number; month: number; day: number }) {
+  return toYmd({ ...parts, month: Math.abs(parts.month) });
+}
+
+function cleanSubjectKey(value: unknown) {
+  const text = cleanText(value, 40);
+  return text && /^[a-zA-Z0-9_-]+$/.test(text) ? text : "self";
+}
+
 function cleanBirthTime(value: unknown) {
   const text = cleanText(value, 5);
 
@@ -211,6 +250,7 @@ function cleanTopics(value: FortuneProfileInput["recurringTopics"]) {
   const topics = raw
     .map((item) => item.trim())
     .filter(Boolean)
+    .map((item) => item === "选择" ? "人生选择" : item)
     .map((item) => item.slice(0, 24));
 
   return Array.from(new Set(topics)).slice(0, 8);
@@ -275,6 +315,8 @@ function buildDerivedProfile(input: {
   name: string | null;
   gender: string | null;
   birthDate: string | null;
+  lunarBirthDate: string | null;
+  yinliBirthDate: string | null;
   birthTime: string | null;
   birthPlace: string | null;
   calendarType: string;
@@ -347,13 +389,31 @@ function buildDerivedProfile(input: {
 }
 
 function normalizeProfileInput(input: FortuneProfileInput) {
+  let birthDate = cleanBirthDate(input.birthDate);
+  let lunarBirthDate = cleanCalendarDate(input.lunarBirthDate);
+  const yinliBirthDate = cleanCalendarDate(input.yinliBirthDate);
+  const calendarType = cleanCalendarType(input.calendarType);
+
+  if (!birthDate && calendarType === "lunar" && lunarBirthDate) {
+    const parts = parseYmd(lunarBirthDate);
+    birthDate = parts ? lunarPartsToSolarYmd(parts) || null : null;
+  }
+
+  if (birthDate) {
+    const lunarParts = getLunarPartsFromSolar(birthDate);
+    lunarBirthDate ??= lunarParts ? toStoredCalendarDate(lunarParts) : null;
+  }
+
   const normalized = {
+    subjectKey: cleanSubjectKey(input.subjectKey),
     name: cleanText(input.name, 30),
     gender: cleanText(input.gender, 20),
-    birthDate: cleanBirthDate(input.birthDate),
+    birthDate,
+    lunarBirthDate,
+    yinliBirthDate,
     birthTime: cleanBirthTime(input.birthTime),
     birthPlace: cleanText(input.birthPlace, 60),
-    calendarType: cleanCalendarType(input.calendarType),
+    calendarType,
     relationshipStatus: cleanText(input.relationshipStatus, 40),
     careerFocus: cleanText(input.careerFocus, 80),
     recurringTopics: cleanTopics(input.recurringTopics),
@@ -373,9 +433,12 @@ function mapDbProfile(profile: DbProfileLike): FortuneProfileRecord {
   const record = {
     id: profile.id,
     userId: profile.userId,
+    subjectKey: profile.subjectKey ?? "self",
     name: profile.name,
     gender: profile.gender,
     birthDate: formatDate(profile.birthday),
+    lunarBirthDate: profile.lunarBirthDate,
+    yinliBirthDate: profile.yinliBirthDate,
     birthTime: profile.birthTime,
     birthPlace: profile.birthPlace,
     calendarType: profile.calendarType,
@@ -397,15 +460,18 @@ function mapDbProfile(profile: DbProfileLike): FortuneProfileRecord {
   };
 }
 
-export async function getFortuneProfile(userId: string) {
+export async function getFortuneProfile(userId: string, subjectKey = "self") {
+  const normalizedSubjectKey = cleanSubjectKey(subjectKey);
   const dbResult = await tryPrisma(async (prisma) => {
-    const profile = await prisma.fortuneProfile.findUnique({ where: { userId } });
+    const profile = await prisma.fortuneProfile.findUnique({
+      where: { userId_subjectKey: { userId, subjectKey: normalizedSubjectKey } },
+    });
     return profile ? mapDbProfile(profile) : null;
   });
 
   if (dbResult.ok) {
     if (dbResult.value) {
-      fortuneProfiles.set(userId, dbResult.value);
+      fortuneProfiles.set(`${userId}:${normalizedSubjectKey}`, dbResult.value);
     }
 
     return dbResult.value;
@@ -415,7 +481,7 @@ export async function getFortuneProfile(userId: string) {
 
   await ensureLocalProfilesLoaded();
 
-  const fallback = fortuneProfiles.get(userId);
+  const fallback = fortuneProfiles.get(`${userId}:${normalizedSubjectKey}`);
 
   if (!fallback) {
     return null;
@@ -426,12 +492,53 @@ export async function getFortuneProfile(userId: string) {
     completeness: calculateCompleteness(fallback),
   } satisfies FortuneProfileRecord;
 
-  fortuneProfiles.set(userId, refreshed);
+  fortuneProfiles.set(`${userId}:${normalizedSubjectKey}`, refreshed);
   return refreshed;
 }
 
-export async function upsertFortuneProfile(userId: string, input: FortuneProfileInput) {
+export class ProfileLimitError extends Error {
+  code = "PROFILE_LIMIT_REACHED" as const;
+  limit: number;
+
+  constructor(limit: number) {
+    super(`当前会员最多保存 ${limit} 份档案，请升级会员后再添加。`);
+    this.name = "ProfileLimitError";
+    this.limit = limit;
+  }
+}
+
+export async function listFortuneProfiles(userId: string) {
+  const dbResult = await tryPrisma(async (prisma) => {
+    const profiles = await prisma.fortuneProfile.findMany({
+      where: { userId },
+      orderBy: { updatedAt: "desc" },
+    });
+    return profiles.map(mapDbProfile);
+  });
+
+  if (dbResult.ok) {
+    for (const profile of dbResult.value) {
+      fortuneProfiles.set(`${userId}:${profile.subjectKey}`, profile);
+    }
+    return dbResult.value;
+  }
+
+  requireProfileDatabaseRead();
+  await ensureLocalProfilesLoaded();
+  return Array.from(fortuneProfiles.values())
+    .filter((profile) => profile.userId === userId)
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
+export async function upsertFortuneProfile(
+  userId: string,
+  input: FortuneProfileInput,
+  subjectKey = input.subjectKey ?? "self",
+  fallbackProfileLimit = 3,
+) {
   const normalized = normalizeProfileInput(input);
+  const normalizedSubjectKey = cleanSubjectKey(subjectKey);
+  normalized.subjectKey = normalizedSubjectKey;
   const birthday = normalized.birthDate
     ? new Date(`${normalized.birthDate}T00:00:00.000Z`)
     : null;
@@ -439,12 +546,33 @@ export async function upsertFortuneProfile(userId: string, input: FortuneProfile
   const dbResult = await tryPrisma(async (prisma) => {
     await ensureDbUser(prisma, { userId });
 
+    const existing = await prisma.fortuneProfile.findUnique({
+      where: { userId_subjectKey: { userId, subjectKey: normalizedSubjectKey } },
+      select: { id: true },
+    });
+    if (!existing) {
+      const accountState = await ensureDbUser(prisma, { userId }).then(() =>
+        prisma.membership.findFirst({
+          where: { userId, isActive: true },
+          orderBy: { updatedAt: "desc" },
+          select: { profileLimit: true },
+        }),
+      );
+      const profileLimit = accountState?.profileLimit ?? 3;
+      const count = await prisma.fortuneProfile.count({ where: { userId } });
+      if (count >= profileLimit) {
+        throw new ProfileLimitError(profileLimit);
+      }
+    }
+
     const profile = await prisma.fortuneProfile.upsert({
-      where: { userId },
+      where: { userId_subjectKey: { userId, subjectKey: normalizedSubjectKey } },
       update: {
         name: normalized.name,
         gender: normalized.gender,
         birthday,
+        lunarBirthDate: normalized.lunarBirthDate,
+        yinliBirthDate: normalized.yinliBirthDate,
         birthTime: normalized.birthTime,
         birthPlace: normalized.birthPlace,
         calendarType: normalized.calendarType,
@@ -459,9 +587,12 @@ export async function upsertFortuneProfile(userId: string, input: FortuneProfile
       },
       create: {
         userId,
+        subjectKey: normalizedSubjectKey,
         name: normalized.name,
         gender: normalized.gender,
         birthday,
+        lunarBirthDate: normalized.lunarBirthDate,
+        yinliBirthDate: normalized.yinliBirthDate,
         birthTime: normalized.birthTime,
         birthPlace: normalized.birthPlace,
         calendarType: normalized.calendarType,
@@ -480,22 +611,36 @@ export async function upsertFortuneProfile(userId: string, input: FortuneProfile
   });
 
   if (dbResult.ok) {
-    fortuneProfiles.set(userId, dbResult.value);
+    fortuneProfiles.set(`${userId}:${normalizedSubjectKey}`, dbResult.value);
     await persistLocalProfiles();
     return dbResult.value;
+  }
+
+  if (dbResult.error instanceof ProfileLimitError) {
+    throw dbResult.error;
   }
 
   requireProfileDatabaseWrite();
 
   await ensureLocalProfilesLoaded();
-  const current = fortuneProfiles.get(userId);
+  const key = `${userId}:${normalizedSubjectKey}`;
+  const current = fortuneProfiles.get(key);
+  if (!current) {
+    const count = Array.from(fortuneProfiles.values()).filter((profile) => profile.userId === userId).length;
+    if (count >= fallbackProfileLimit) {
+      throw new ProfileLimitError(fallbackProfileLimit);
+    }
+  }
   const now = new Date().toISOString();
   const record = {
     id: current?.id ?? `profile_${randomUUID()}`,
     userId,
+    subjectKey: normalizedSubjectKey,
     name: normalized.name,
     gender: normalized.gender,
     birthDate: normalized.birthDate,
+    lunarBirthDate: normalized.lunarBirthDate,
+    yinliBirthDate: normalized.yinliBirthDate,
     birthTime: normalized.birthTime,
     birthPlace: normalized.birthPlace,
     calendarType: normalized.calendarType,
@@ -516,7 +661,7 @@ export async function upsertFortuneProfile(userId: string, input: FortuneProfile
     completeness: calculateCompleteness(record),
   } satisfies FortuneProfileRecord;
 
-  fortuneProfiles.set(userId, completed);
+  fortuneProfiles.set(key, completed);
   await persistLocalProfiles();
   return completed;
 }
@@ -531,6 +676,8 @@ export async function mergeFortuneProfileFromBaziInput(
     name: input.name ?? current?.name,
     gender: input.gender ?? current?.gender,
     birthDate: input.birthDate ?? current?.birthDate,
+    lunarBirthDate: current?.lunarBirthDate,
+    yinliBirthDate: current?.yinliBirthDate,
     birthTime: input.birthTime ?? current?.birthTime,
     birthPlace: input.birthPlace ?? current?.birthPlace,
     calendarType: input.calendarType ?? current?.calendarType ?? "solar",
@@ -541,15 +688,7 @@ export async function mergeFortuneProfileFromBaziInput(
 }
 
 export function hasSavedFortuneProfile(profile: FortuneProfileRecord | null) {
-  return Boolean(
-    profile &&
-      (profile.completeness >= 100 ||
-        profile.memorySummary ||
-        profile.name ||
-        profile.birthDate ||
-        profile.careerFocus ||
-        profile.recurringTopics.length > 0),
-  );
+  return Boolean(profile && profile.completeness >= 100);
 }
 
 export function buildProfileMemory(profile: FortuneProfileRecord | null) {

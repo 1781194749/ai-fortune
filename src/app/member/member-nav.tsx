@@ -4,170 +4,165 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   BadgeCheck,
-  FileText,
+  ChevronDown,
   Gift,
-  Grid2X2,
-  LayoutDashboard,
+  LockKeyhole,
   MessageCircle,
-  Route,
+  ReceiptText,
   ShieldCheck,
   UserRound,
-  WalletCards,
 } from "lucide-react";
 import { XuanjiMark } from "@/app/_components/xuanji-mark";
 import { brand } from "@/lib/site";
 import { LogoutButton } from "./logout-button";
 
 const navItems = [
-  { href: "/member", label: "账户概览", icon: LayoutDashboard },
-  { href: "/member/companion", label: "阶段陪伴", icon: Route },
-  { href: "/member/entitlements", label: "权益额度", icon: Grid2X2 },
-  { href: "/member/invite", label: "邀请有礼", icon: Gift },
-  { href: "/member/profile", label: "命理档案", icon: UserRound },
-  { href: "/member/reports", label: "报告文件", icon: FileText },
-  { href: "/member/records", label: "交易记录", icon: WalletCards },
+  { href: "/member/profile", label: "我的档案" },
+  { href: "/member/companion", label: "阶段陪伴" },
+  { href: "/member/reports", label: "我的报告" },
+  { href: "/member/entitlements", label: "套餐与用量" },
 ] as const;
 
 function isActivePath(pathname: string, href: string) {
-  return href === "/member" ? pathname === href : pathname === href || pathname.startsWith(`${href}/`);
+  return pathname === href || pathname.startsWith(`${href}/`);
 }
 
 export function MemberNav({
   emailMasked,
   tierLabel,
   starBalance,
+  chatQuota,
+  chatUsed,
   canAccessAdmin,
+  isFree,
 }: {
   emailMasked: string;
   tierLabel: string;
   starBalance: number;
+  chatQuota: number;
+  chatUsed: number;
   canAccessAdmin: boolean;
+  isFree: boolean;
 }) {
   const pathname = usePathname();
+  const remainingChats = Math.max(0, chatQuota - chatUsed);
 
   return (
-    <>
-      <aside className="hidden w-[260px] shrink-0 flex-col border-r border-[#20252d] bg-[#0d1015] px-4 py-5 lg:flex">
-        <Link href="/" className="flex items-center gap-3 rounded-lg px-2 py-2" aria-label="返回玄机 AI 首页">
-          <XuanjiMark className="size-9" />
-          <span>
-            <span className="block font-ritual text-base tracking-[0.08em] text-[#f4efe5]">{brand.cn}</span>
-            <span className="block text-[10px] tracking-[0.18em] text-[#667085]">PERSONAL CENTER</span>
-          </span>
-        </Link>
+    <header className="sticky top-0 z-40 border-b border-[#20252d] bg-[#090b0e]/94 backdrop-blur-xl">
+      <div className="mx-auto w-full max-w-[1440px] px-4 sm:px-6 lg:px-10">
+        <div className="flex h-16 items-center justify-between gap-4">
+          <Link href="/" className="flex min-w-0 items-center gap-3" aria-label="返回玄机 AI 首页">
+            <XuanjiMark className="size-9 shrink-0" />
+            <span className="min-w-0">
+              <span className="block truncate font-ritual text-base text-[#f4efe5]">{brand.cn}</span>
+              <span className="block text-[11px] text-[#8d98a8]">个人空间</span>
+            </span>
+          </Link>
 
-        <nav className="mt-7 space-y-1 text-sm" aria-label="个人中心导航">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const active = isActivePath(pathname, item.href);
-
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`flex h-10 items-center gap-3 rounded-md px-3 transition ${
-                  active
-                    ? "bg-[#19160f] text-[#efd9a6]"
-                    : "text-[#a8b0bd] hover:bg-[#161b22] hover:text-[#f4efe5]"
-                }`}
-              >
-                <Icon size={16} aria-hidden="true" />
-                {item.label}
-              </Link>
-            );
-          })}
-          {canAccessAdmin ? (
+          <div className="flex items-center gap-1 sm:gap-2">
+            <span className="mr-2 hidden text-right lg:block">
+              <span className="block text-xs text-[#c8d0dc]">{emailMasked}</span>
+              <span className="mt-0.5 block text-[11px] text-[#8d98a8]">{tierLabel} · {remainingChats} 次问答可用</span>
+            </span>
             <Link
-              href="/admin"
-              className="flex h-10 items-center gap-3 rounded-md px-3 text-[#d8b873] transition hover:bg-[#19160f] hover:text-[#efd9a6]"
+              href="/chat"
+              className="inline-flex h-9 items-center gap-2 rounded-md px-2.5 text-sm text-[#c8d0dc] transition hover:bg-[#171a20] hover:text-[#f4efe5] sm:px-3"
             >
-              <ShieldCheck size={16} aria-hidden="true" />
-              平台后台
+              <MessageCircle size={16} aria-hidden="true" />
+              <span className="hidden sm:inline">开始问事</span>
             </Link>
-          ) : null}
-        </nav>
+            <Link
+              href={isFree ? "/pricing" : "/member/entitlements"}
+              className="inline-flex h-9 items-center gap-2 rounded-md bg-[#c9a35f] px-3 text-sm font-medium text-[#17130d] transition hover:bg-[#efd9a6]"
+            >
+              <BadgeCheck size={15} aria-hidden="true" />
+              {isFree ? "升级" : "我的套餐"}
+            </Link>
+            <details key={pathname} className="group relative">
+              <summary
+                className="flex h-9 list-none items-center gap-1 rounded-md px-2 text-[#8d98a8] transition hover:bg-[#171a20] hover:text-[#f4efe5] [&::-webkit-details-marker]:hidden"
+                aria-label="打开账户菜单"
+                title="账户菜单"
+              >
+                <UserRound size={17} aria-hidden="true" />
+                <ChevronDown
+                  size={14}
+                  className="hidden transition group-open:rotate-180 sm:block"
+                  aria-hidden="true"
+                />
+              </summary>
 
-        <div className="mt-7 rounded-lg border border-[#252a32] bg-[#101318] p-4">
-          <p className="text-xs text-[#697386]">当前账户</p>
-          <p className="mt-2 truncate text-sm font-medium text-[#d7dee8]">{emailMasked}</p>
-          <div className="mt-4 flex items-center justify-between gap-3 text-xs">
-            <span className="rounded-md border border-[#c9a35f]/28 bg-[#c9a35f]/8 px-2 py-1 text-[#d8b873]">{tierLabel}</span>
-            <span className="text-[#8d98a8]">{starBalance} 星力</span>
+              <div className="absolute right-0 top-11 z-50 w-[min(19rem,calc(100vw-2rem))] overflow-hidden rounded-lg border border-[#2b3038] bg-[#101318] shadow-[0_22px_70px_rgba(0,0,0,0.5)]">
+                <div className="border-b border-[#252a32] px-4 py-4">
+                  <p className="truncate text-sm font-medium text-[#e8edf4]">{emailMasked}</p>
+                  <p className="mt-1 text-xs text-[#8d98a8]">
+                    {tierLabel} · {remainingChats} 次问答可用 · {starBalance} 星力
+                  </p>
+                </div>
+
+                <div className="p-2">
+                  <Link
+                    href="/member/records"
+                    className="flex h-10 items-center gap-3 rounded-md px-3 text-sm text-[#c8d0dc] transition hover:bg-[#191d24] hover:text-[#f4efe5]"
+                  >
+                    <ReceiptText size={16} className="text-[#8d98a8]" aria-hidden="true" />
+                    订单与星力记录
+                  </Link>
+                  <Link
+                    href="/member/invite"
+                    className="flex h-10 items-center gap-3 rounded-md px-3 text-sm text-[#c8d0dc] transition hover:bg-[#191d24] hover:text-[#f4efe5]"
+                  >
+                    <Gift size={16} className="text-[#8d98a8]" aria-hidden="true" />
+                    邀请有礼
+                  </Link>
+                  <Link
+                    href="/legal/privacy"
+                    className="flex h-10 items-center gap-3 rounded-md px-3 text-sm text-[#c8d0dc] transition hover:bg-[#191d24] hover:text-[#f4efe5]"
+                  >
+                    <LockKeyhole size={16} className="text-[#8d98a8]" aria-hidden="true" />
+                    隐私政策
+                  </Link>
+                  {canAccessAdmin ? (
+                    <Link
+                      href="/admin"
+                      className="flex h-10 items-center gap-3 rounded-md px-3 text-sm text-[#d8b873] transition hover:bg-[#19160f] hover:text-[#efd9a6]"
+                    >
+                      <ShieldCheck size={16} aria-hidden="true" />
+                      管理后台
+                    </Link>
+                  ) : null}
+                </div>
+
+                <div className="border-t border-[#252a32] p-2">
+                  <LogoutButton variant="menu" />
+                </div>
+              </div>
+            </details>
           </div>
         </div>
 
-        <div className="mt-auto pt-4">
-          <LogoutButton variant="menu" />
-        </div>
-      </aside>
+        <div className="flex min-w-0 items-center gap-6">
+          <nav className="xuanji-scrollbar flex min-w-0 flex-1 items-center gap-6 overflow-x-auto text-sm" aria-label="个人空间导航">
+            {navItems.map((item) => {
+              const active = isActivePath(pathname, item.href);
 
-      <div className="border-b border-[#20252d] bg-[#0d1015] lg:hidden">
-        <div className="flex items-center justify-between gap-3 px-4 py-3">
-          <Link href="/" className="flex items-center gap-2" aria-label="返回玄机 AI 首页">
-            <XuanjiMark className="size-8" />
-            <span className="font-ritual text-base tracking-[0.08em] text-[#f4efe5]">{brand.cn}</span>
-          </Link>
-          <LogoutButton />
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={`inline-flex h-12 shrink-0 items-center border-b-2 px-0.5 transition ${
+                    active
+                      ? "border-[#c9a35f] text-[#efd9a6]"
+                      : "border-transparent text-[#8d98a8] hover:text-[#d7dee8]"
+                  }`}
+                >
+                  {item.label}
+                </Link>
+              );
+            })}
+          </nav>
         </div>
-        <nav className="xuanji-scrollbar flex gap-2 overflow-x-auto px-4 pb-3 text-sm" aria-label="个人中心移动导航">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const active = isActivePath(pathname, item.href);
-
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`inline-flex h-9 shrink-0 items-center gap-2 rounded-md border px-3 ${
-                  active
-                    ? "border-[#c9a35f]/45 bg-[#19160f] text-[#efd9a6]"
-                    : "border-[#303642] bg-[#11151b] text-[#c8d0dc]"
-                }`}
-              >
-                <Icon size={15} aria-hidden="true" />
-                {item.label}
-              </Link>
-            );
-          })}
-          {canAccessAdmin ? (
-            <Link
-              href="/admin"
-              className="inline-flex h-9 shrink-0 items-center gap-2 rounded-md border border-[#c9a35f]/35 bg-[#19160f] px-3 text-[#efd9a6]"
-            >
-              <ShieldCheck size={15} aria-hidden="true" />
-              平台后台
-            </Link>
-          ) : null}
-        </nav>
       </div>
-    </>
-  );
-}
-
-export function MemberTopActions({ isFree }: { isFree: boolean }) {
-  return (
-    <div className="flex flex-wrap items-center gap-2">
-      <Link
-        href="/chat"
-        className="inline-flex h-9 items-center gap-2 rounded-md border border-[#303642] bg-[#11151b] px-3 text-sm text-[#c8d0dc] transition hover:border-[#3d4654] hover:bg-[#161b22]"
-      >
-        <MessageCircle size={15} aria-hidden="true" />
-        Chat
-      </Link>
-      <Link
-        href="/member/invite"
-        className="inline-flex h-9 items-center gap-2 rounded-md border border-[#3c8b72]/35 bg-[#3c8b72]/10 px-3 text-sm text-[#8ad5bd] transition hover:border-[#8ad5bd]/55 hover:bg-[#3c8b72]/15"
-      >
-        <Gift size={15} aria-hidden="true" />
-        邀请有礼
-      </Link>
-      <Link
-        href={isFree ? "/pricing" : "/member/entitlements"}
-        className="inline-flex h-9 items-center gap-2 rounded-md bg-[#c9a35f] px-3 text-sm font-medium text-[#17130d] transition hover:bg-[#efd9a6]"
-      >
-        <BadgeCheck size={15} aria-hidden="true" />
-        {isFree ? "升级会员" : "权益额度"}
-      </Link>
-    </div>
+    </header>
   );
 }

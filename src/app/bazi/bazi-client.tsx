@@ -39,6 +39,11 @@ type BaziPillar = {
 
 type BaziChart = {
   solar: string;
+  timeStandard: {
+    basis: string;
+    trueSolarTimeAdjusted: boolean;
+    note: string;
+  };
   lunar: string;
   zodiac: string;
   bazi: string[];
@@ -68,7 +73,7 @@ type BaziChart = {
     advice: string;
   }>;
   luck: {
-    start: {
+    start?: {
       solar: string;
       direction: string;
     };
@@ -120,9 +125,9 @@ const wuxingOrder = ["木", "火", "土", "金", "水"] as const;
 const baziProcessSteps = [
   { label: "校验出生信息", detail: "确认历法、日期、时辰和出生地是否足够排盘。" },
   { label: "计算四柱十神", detail: "换算四柱干支、十神、藏干、纳音与地势。" },
-  { label: "分析旺衰喜忌", detail: "结合月令、根气和五行生克判断日主强弱。" },
-  { label: "排大运流年", detail: "生成起运、当前大运和未来流年节奏。" },
-  { label: "生成命盘报告", detail: "输出结构判断、喜用方向和可追问问题。" },
+  { label: "分析命盘结构", detail: "结合月令、根气和五行生克判断日主强弱。" },
+  { label: "排运势节奏", detail: "性别明确时排大运，并生成未来流年节奏。" },
+  { label: "生成命盘报告", detail: "输出结构判断、调节方向和可追问问题。" },
 ] as const;
 
 type InitialBaziProfile = {
@@ -306,7 +311,7 @@ export function BaziClient({
           title="排盘过程"
           service={{
             type: "八字命盘详析",
-            method: "四柱十神 + 旺衰喜忌 + 大运流年",
+            method: "四柱十神 + 旺衰结构 + 大运流年",
             cost: getStarCostLabel("bazi_brief"),
             output: "命盘结构 + 阶段建议",
           }}
@@ -364,7 +369,7 @@ export function BaziClient({
                     <p className="mt-1 text-lg text-[#f0d49a]">{result.chart.dayMaster.drainScore}</p>
                   </div>
                   <div className="rounded-md bg-[#12100d] p-3">
-                    <p className="text-xs text-[#80776a]">喜用</p>
+                    <p className="text-xs text-[#80776a]">结构调节</p>
                     <p className="mt-1 text-lg text-[#f0d49a]">{result.chart.dayMaster.usefulElements.join("、")}</p>
                   </div>
                 </div>
@@ -417,7 +422,9 @@ export function BaziClient({
               <article className="rounded-lg border border-[#3a3023] bg-[#080705] p-5">
                 <h2 className="font-ritual text-3xl text-[#fff7e8]">大运流年</h2>
                 <p className="mt-3 text-sm leading-7 text-[#d8cab2]">
-                  {result.chart.luck.start.direction} · 起运约 {result.chart.luck.start.solar}
+                  {result.chart.luck.start
+                    ? `${result.chart.luck.start.direction} · 起运约 ${result.chart.luck.start.solar}`
+                    : "未填写性别，暂不排大运顺逆、起运时间与当前大运。"}
                 </p>
                 {result.chart.luck.currentDaYun ? (
                   <p className="mt-3 rounded-md bg-[#12100d] p-3 text-sm leading-7 text-[#f0d49a]">
@@ -435,6 +442,9 @@ export function BaziClient({
                     </div>
                   ))}
                 </div>
+                <p className="mt-4 text-xs leading-6 text-[#80776a]">
+                  {result.chart.timeStandard.note}
+                </p>
               </article>
             </div>
 

@@ -9,6 +9,8 @@ type PurchaseIntent = {
   priceLabel: string;
   durationDays?: number;
   starGrant?: number;
+  chatQuota?: number;
+  profileLimit?: number;
   reportQuota?: number;
   palmQuota?: number;
 };
@@ -42,7 +44,7 @@ function returnToLabel(returnTo: string, purchaseIntent?: PurchaseIntent) {
   }
 
   if (returnTo.startsWith("/onboarding")) {
-    return "使用 Google 进入 Chat";
+    return "使用 Google 先完成基础资料";
   }
 
   if (returnTo.startsWith("/admin")) {
@@ -58,12 +60,12 @@ function initialMessage(returnTo: string, purchaseIntent?: PurchaseIntent) {
   }
 
   if (returnTo.startsWith("/onboarding")) {
-    return "使用 Google 邮箱确认账号后，直接进入 Chat 开始问事。";
+    return "新用户登录后会先完成基础资料；已有完整档案的用户会直接进入 Chat。";
   }
 
   return purchaseIntent
     ? `使用 Google 邮箱登录后，继续购买${purchaseIntent.name}。`
-    : "使用 Google 邮箱登录后，直接进入 Chat 开始问事。";
+    : "登录后先完成基础资料，已有完整档案的用户会直接进入 Chat。";
 }
 
 function googleErrorMessage(error?: string) {
@@ -71,12 +73,8 @@ function googleErrorMessage(error?: string) {
     return "Google 登录未完成，请重试。";
   }
 
-  if (error === "not_configured") {
-    return "Google 登录暂未配置，请先在环境变量中补齐 OAuth Client ID 和 Secret。";
-  }
-
-  if (error === "database_unavailable") {
-    return "生产数据库暂不可用，暂时无法完成登录。";
+  if (error === "unavailable" || error === "not_configured") {
+    return "Google 登录暂不可用，请改用邮箱验证码登录。";
   }
 
   return undefined;
@@ -142,8 +140,7 @@ export function LoginForm({
           </a>
         ) : (
           <div className="rounded-md border border-[#5d2b22] bg-[#160c09] p-4 text-sm leading-6 text-[#d8cab2]">
-            Google 登录尚未配置。上线前请设置 AUTH_GOOGLE_ENABLED、GOOGLE_CLIENT_ID 和
-            GOOGLE_CLIENT_SECRET。
+            Google 登录暂不可用，请使用邮箱验证码登录。
           </div>
         )}
         {purchaseIntent ? (
@@ -153,10 +150,13 @@ export function LoginForm({
             </p>
             <div className="mt-3 grid gap-2 text-sm text-[#d8cab2] sm:grid-cols-2">
               <p className="rounded-md bg-[#080705] px-3 py-2">
-                {purchaseIntent.priceLabel} / {purchaseIntent.durationDays} 天
+                {purchaseIntent.priceLabel} / 月
               </p>
               <p className="rounded-md bg-[#080705] px-3 py-2">
-                {purchaseIntent.starGrant} 星力
+                {purchaseIntent.chatQuota} 次问答
+              </p>
+              <p className="rounded-md bg-[#080705] px-3 py-2">
+                最多 {purchaseIntent.profileLimit} 份档案
               </p>
               <p className="rounded-md bg-[#080705] px-3 py-2">
                 {purchaseIntent.reportQuota} 份报告额度

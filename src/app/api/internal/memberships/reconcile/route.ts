@@ -1,4 +1,5 @@
 import { reconcileExpiredMemberships } from "@/lib/membership-lifecycle";
+import { reconcileStaleChatTurns } from "@/lib/chat-turn-service";
 
 function isAuthorized(request: Request) {
   const configuredSecret = process.env.MEMBERSHIP_RECONCILE_SECRET ?? process.env.CRON_SECRET;
@@ -17,8 +18,9 @@ async function reconcile(request: Request) {
   }
 
   try {
-    const result = await reconcileExpiredMemberships();
-    return Response.json({ ok: true, ...result });
+    const membership = await reconcileExpiredMemberships();
+    const chatTurns = await reconcileStaleChatTurns();
+    return Response.json({ ok: true, ...membership, chatTurns });
   } catch (error) {
     return Response.json(
       { ok: false, message: error instanceof Error ? error.message : "会员到期任务执行失败。" },

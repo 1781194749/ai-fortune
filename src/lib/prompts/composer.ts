@@ -25,6 +25,13 @@ import {
   validateFortuneAnswerStatus,
   validateFortuneAnswerTier,
 } from "@/lib/prompts/validation";
+import {
+  buildAnswerRequirements,
+  rankEvidenceForAnswer,
+  resolveChatModelPolicy,
+  selectModelConversationHistory,
+  type AnswerRequirements,
+} from "@/lib/chat-answer-quality";
 
 type PromptConversationMessage = {
   role: "user" | "assistant";
@@ -78,8 +85,8 @@ function extractDeterministicVerdict(draftAnswer: string) {
 function fallbackReasonText(reason?: string) {
   const labels: Record<string, string> = {
     MODEL_PROVIDER_UNAVAILABLE: "当前使用本地证据解读",
-    MODEL_GENERATION_FAILED: "模型暂不可用，已切换本地安全解读",
-    MODEL_OUTPUT_VALIDATION_FAILED: "模型输出未通过事实校验，已切换本地安全解读",
+    MODEL_GENERATION_FAILED: "已按现有信息生成保守回答",
+    MODEL_OUTPUT_VALIDATION_FAILED: "已按现有证据生成保守回答",
   };
   return reason ? labels[reason] ?? "当前使用稳健降级解读" : "稳健解读";
 }
@@ -142,6 +149,31 @@ function buildInstructions(input: FortunePromptInput, components: ReturnType<typ
 }
 
 function buildUserPayload(input: FortunePromptInput) {
+  const modelPolicy = resolveChatModelPolicy(input.serviceTier);
+  const answerKind: AnswerRequirements["answerKind"] = input.answerShape === "decision_ab"
+    ? "decision"
+    : input.answerShape === "missing_info"
+      ? "missing_input"
+      : input.answerShape === "safety_boundary"
+        ? "safety"
+        : input.answerShape === "single_reading" || input.answerShape === "tool_followup"
+          ? "reading"
+          : "direct";
+  const answerRequirements = buildAnswerRequirements({
+    question: input.question,
+    answerKind,
+    serviceMode: input.serviceTier,
+    method: input.method,
+    evidence: input.evidence,
+    conversationHistory: input.conversationHistory,
+  });
+  const rankedEvidence = rankEvidenceForAnswer({
+    question: input.question,
+    evidence: input.evidence,
+    topic: answerRequirements.topic,
+    serviceMode: input.serviceTier,
+  });
+
   return {
     task: input.reportMode ? "create_structured_deep_report" : "create_structured_chat_answer",
     question: input.question,
@@ -159,9 +191,16 @@ function buildUserPayload(input: FortunePromptInput) {
     answerShape: input.answerShape,
     contextSummary: input.contextSummary,
     profileMemory: input.profileMemory,
-    conversationHistory: (input.conversationHistory ?? []).slice(-8).map((message) => ({
-      role: message.role,
-      content: compactText(message.content, 1200),
+    conversationHistory: selectModelConversationHistory(
+      input.conversationHistory ?? [],
+      modelPolicy,
+    ),
+    answerRequirements,
+    rankedEvidence: rankedEvidence.map((entry) => ({
+      evidenceId: entry.item.evidenceId,
+      rank: entry.rank,
+      required: entry.required,
+      reasons: entry.reasons,
     })),
     readingEvidence: serializeEvidenceForPrompt(input.evidence),
     localDraftForFallback: input.draftAnswer,
@@ -263,6 +302,7 @@ export function validateStructuredFortuneAnswer(input: {
       answer: shape.data,
       serviceTier: input.serviceTier,
       evidence: input.evidence,
+      route: input.route,
     }),
   ];
 
@@ -283,6 +323,76 @@ function stripTrailingSentencePunctuation(value: string) {
   return value.trim().replace(/[。；;，,、：:]$/u, "");
 }
 
+function buildGeneralFallbackGuidance(question: string) {
+  if (/产品.{0,8}(?:图|图片|照片)|(?:图|图片|照片).{0,8}产品/.test(question) && /优化|改进|调整|怎么做|建议/.test(question)) {
+    return {
+      actions: [{
+        label: "重做一版主视觉",
+        detail: "让产品成为唯一视觉主体，只保留一个主卖点，再分别检查构图、光线、颜色和文案层级。",
+        horizon: "今天",
+        reversible: true,
+      }],
+      realityChecks: ["缩小到手机列表尺寸后，是否仍能快速看清卖什么和核心卖点。", "用原图和新版做一次小流量 A/B 测试，比较点击或咨询率。"],
+      followUps: ["把产品图片发出来，我可以逐项标注", "这张图主要用于电商主图、详情页还是社媒？"],
+      safetyNotice: "以上是通用视觉优化建议，最终以真实渠道的点击、停留和转化数据验证。",
+    };
+  }
+
+  if (/生日/.test(question) && /礼物|送什么|送啥/.test(question)) {
+    return {
+      actions: [{
+        label: "按兴趣和预算列三项",
+        detail: "分别列出对方最近提过的需要、一个共同体验和一个预算内的小物，优先选择最具体的一项。",
+        horizon: "今天",
+        reversible: true,
+      }],
+      realityChecks: ["礼物是否对应对方真实表达过的兴趣或需要。", "礼物价格是否与关系阶段匹配，不给对方造成回礼压力。"],
+      followUps: ["你们是什么关系，预算大约多少？", "他最近最常提到的兴趣是什么？"],
+      safetyNotice: "礼物建议以对方真实偏好和关系边界为准，不需要用命理信息替代了解。",
+    };
+  }
+
+  if (/出生(?:医学)?(?:证明|证)/.test(question) && /补办|补发|补领|换发|丢失|遗失|怎么办|怎么/.test(question)) {
+    return {
+      actions: [{
+        label: "先确认办理辖区",
+        detail: "先确认办理国家和城市，再联系原签发机构或当地出生登记主管机构，索取当前办理入口与材料清单。",
+        horizon: "办理前",
+        reversible: true,
+      }],
+      realityChecks: ["未确认国家和城市前，不按网上清单准备材料。", "只以对应辖区主管机构的当前要求为准。"],
+      followUps: ["你准备在哪个国家、城市办理？", "原签发机构目前是否仍在？"],
+      safetyNotice: "行政流程随辖区变化，以上只提供高层路径，不代替当地主管机构的当前要求。",
+    };
+  }
+
+  if (/工作|事业|岗位|项目|同事|老板/.test(question) && /烦|累|焦虑|压力|迷茫|卡住|不想干/.test(question)) {
+    return {
+      actions: [{
+        label: "只处理最大压力源",
+        detail: "把问题分成工作量、人际、方向和回报四类，选影响最大的一类，写下一个可控动作和一个需要沟通的边界。",
+        horizon: "今天",
+        reversible: true,
+      }],
+      realityChecks: ["完成这个动作后，压力是否在 48 小时内下降。", "问题来自短期峰值，还是已连续数周没有改善。"],
+      followUps: ["最烦的是工作量、人际、方向还是回报？", "这件事已经持续多久？"],
+      safetyNotice: "先根据工作事实和身心状态判断；如果压力持续影响睡眠或日常功能，优先寻求现实支持。",
+    };
+  }
+
+  return {
+    actions: [{
+      label: "做一个最小验证",
+      detail: "写下目标、当前限制和今天能做的最小动作，只验证一个会真正改变判断的条件。",
+      horizon: "今天",
+      reversible: true,
+    }],
+    realityChecks: ["这个动作是否能在短时间内产生可观察反馈。", "新信息出现后，原判断是否仍然成立。"],
+    followUps: ["哪一个未知信息最可能改变你的决定？", "你希望先得到建议、比较方案，还是只梳理问题？"],
+    safetyNotice: "以上为一般信息和现实问题梳理；涉及医疗、法律、投资或人身安全时，以专业支持为准。",
+  };
+}
+
 export function buildDeterministicFortuneAnswer(input: {
   evidence: ReadingEvidencePackage;
   draftAnswer: string;
@@ -290,6 +400,7 @@ export function buildDeterministicFortuneAnswer(input: {
   serviceTier?: ServiceTier;
   status?: FortuneAnswer["status"];
   reason?: string;
+  question?: string;
 }) : FortuneAnswer {
   const refs = firstEvidenceRefs(input.evidence);
   const primaryEvidence = refs[0] ?? input.evidence.allowedEvidenceIds[0] ?? "context.subject";
@@ -304,18 +415,19 @@ export function buildDeterministicFortuneAnswer(input: {
     palm: "图片证据",
   }[input.method];
   const needsInput = input.status === "needs_input";
+  const generalGuidance = buildGeneralFallbackGuidance(input.question?.trim() ?? "");
   const interpretationLimit = input.serviceTier === "deep" ? 3 : input.serviceTier === "formal" ? 2 : 1;
   const interpretationRefs = (refs.length > 0 ? refs : [primaryEvidence]).slice(0, interpretationLimit);
   const actions = needsInput
     ? [{
         label: input.method === "bazi" ? "补充出生资料" : "补充必要资料",
-        detail: input.method === "bazi"
-          ? "提供问事对象的公历出生日期、尽量准确的出生时间和出生地，再开始排盘。"
-          : "补齐当前推演明确要求的信息后，再生成正式判断。",
-        horizon: "准备好后",
-        reversible: true,
+        detail: draft,
+        horizon: "补充后",
+        reversible: false,
       }]
-    : [
+    : input.method === "general"
+      ? generalGuidance.actions
+      : [
         {
           label: "先做低成本验证",
           detail: "把结论落实成一个可观察的小动作，不做不可逆承诺。",
@@ -336,40 +448,58 @@ export function buildDeterministicFortuneAnswer(input: {
     status: input.status ?? "fallback",
     verdict: {
       summary: draft,
-      stance: userFacingReason,
+      stance: needsInput ? null : input.method === "general" ? "现实问题直接回答" : userFacingReason,
       confidence: input.method === "general" ? "medium" : "low",
     },
     evidenceRefs: refs.length > 0 ? refs : [primaryEvidence],
     interpretations: interpretationRefs.map((evidenceId) => ({
         evidenceId,
-        claim: `${methodLabel}已由后端确定性工具生成。`,
-        meaning: `围绕${subject}，本轮只使用证据包中已有内容给出保守解释。`,
+        claim: needsInput
+          ? "完成当前推演所需的资料尚未齐全。"
+          : input.method === "general"
+          ? "当前问题与回答边界已经确认。"
+          : `${methodLabel}已由后端确定性工具生成。`,
+        meaning: needsInput
+          ? draft
+          : input.method === "general"
+          ? `围绕${subject}，本轮直接处理现实问题，不生成命理事实。`
+          : `围绕${subject}，本轮只使用证据包中已有内容给出保守解释。`,
         limitation: needsInput
           ? "必要资料尚未补齐，本轮不会生成排盘结论。"
-          : "当前信息有限，本轮只给出保守判断，建议结合现实反馈继续验证。",
+          : input.method === "general"
+            ? "建议仍需结合所在地、预算、关系或工作场景等实际信息调整。"
+            : "当前信息有限，本轮只给出保守判断，建议结合现实反馈继续验证。",
       })),
     uncertainty: {
       level: input.method === "general" ? "medium" : "high",
       reasons: needsInput
         ? ["必要资料尚未补齐，当前不能生成可靠的正式推演。"]
-        : [
-            `${userFacingReason}，不扩展证据包之外的新事实。`,
-            "命理结果只适合文化参考和自我探索，需要用现实反馈验证。",
-          ],
+        : input.method === "general"
+          ? ["当前只依据用户本轮提供的信息给出一般建议，具体情境可能改变结论。"]
+          : [
+              `${userFacingReason}，不扩展证据包之外的新事实。`,
+              "命理结果只适合文化参考和自我探索，需要用现实反馈验证。",
+            ],
     },
     actions,
     realityChecks: needsInput
       ? ["资料补齐前不生成四柱、牌面、卦象或其他确定性结论。"]
-      : [
-          "观察对方或环境是否给出持续行动，而不是只看一句话。",
-          "涉及医疗、法律、投资、妊娠、暴力或人身安全时，以专业与现实支持为准。",
-        ],
+      : input.method === "general"
+        ? generalGuidance.realityChecks
+        : [
+            "观察对方或环境是否给出持续行动，而不是只看一句话。",
+            "涉及医疗、法律、投资、妊娠、暴力或人身安全时，以专业与现实支持为准。",
+          ],
     followUps: needsInput
       ? input.method === "bazi"
         ? ["我来补充出生信息", "不知道准确时辰怎么办", "先做不依赖八字的现实梳理"]
         : ["我来补充资料", "还缺哪些信息", "先做不依赖术数的现实梳理"]
-      : ["帮我把问题收窄成可验证动作", "哪些证据最关键？", "我下一步先做什么？"],
-    safetyNotice: "本回答仅供文化参考、自我探索和情绪陪伴，不替代专业建议或重大决策。",
+      : input.method === "general"
+        ? generalGuidance.followUps
+        : ["帮我把问题收窄成可验证动作", "哪些证据最关键？", "我下一步先做什么？"],
+    safetyNotice: input.method === "general"
+      ? generalGuidance.safetyNotice
+      : "本回答仅供文化参考、自我探索和情绪陪伴，不替代专业建议或重大决策。",
   };
 }
 
@@ -383,6 +513,10 @@ export function renderFortuneAnswer(answer: FortuneAnswer, input: {
   const stance = answer.verdict.stance
     ? stripTrailingSentencePunctuation(answer.verdict.stance)
     : "";
+  if (answer.status === "needs_input") {
+    return verdictSummary;
+  }
+
   if (answer.status === "blocked") {
     return [
       `直接判断：${verdictSummary}`,

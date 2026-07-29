@@ -1,11 +1,10 @@
 "use client";
 
-import { useChat } from "@ai-sdk/react";
-import { DefaultChatTransport, type ChatStatus } from "ai";
 import Link from "next/link";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import type { ChangeEvent, FormEvent, KeyboardEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import {
   ArrowDown,
   ArrowUp,
@@ -20,6 +19,7 @@ import {
   LifeBuoy,
   Loader2,
   Menu,
+  MessageCircle,
   Paperclip,
   Pencil,
   Plus,
@@ -34,15 +34,15 @@ import {
 } from "lucide-react";
 import { XuanjiMark } from "@/app/_components/xuanji-mark";
 import { InviteCopyButton } from "@/app/_components/invite-copy-button";
-import { ChatConclusionCard, ChatRitual } from "@/app/chat/chat-ritual";
+import { ChatRitual } from "@/app/chat/chat-ritual";
 import { ChatServiceSelector } from "@/app/chat/chat-service-selector";
 import { MarkdownMessage } from "@/app/chat/markdown-message";
+import { useXuanjiChat, type XuanjiChatStatus } from "@/app/chat/use-xuanji-chat";
 import { LogoutButton } from "@/app/member/logout-button";
-import type { AiToolCall, ChatAnswerShape, ChatConclusion } from "@/lib/ai-orchestrator";
 import type { RecentChatSession } from "@/lib/ai-session-store";
 import {
-  inferChatService,
   type ChatReadingMethod,
+  type ChatServiceIntent,
   type ChatServiceMode,
 } from "@/lib/chat-service";
 import type {
@@ -54,7 +54,7 @@ import type {
   ChatTrace,
   XuanjiChatMessage,
 } from "@/lib/chat-ui-message";
-import type { FortuneAnswer } from "@/lib/prompts/contracts";
+import type { PalmImage } from "@/lib/palm-image-public";
 
 type SuccessChatResponse = ChatSuccessData;
 
@@ -63,16 +63,7 @@ type UploadToken = {
   key: string;
   token: string;
   uploadUrl: string | null;
-  publicUrl: string;
   expiresAt: string;
-};
-
-type PalmImage = {
-  id: string;
-  qiniuKey: string;
-  url: string;
-  contentType: string;
-  sizeBytes: number;
 };
 
 type ChatProfileSummary = {
@@ -90,6 +81,12 @@ type ChatAccountSummary = {
   canAccessAdmin: boolean;
 };
 
+type ChatQuotaSummary = {
+  total: number;
+  used: number;
+  remaining: number;
+};
+
 type ChatTranscriptResponse = {
   ok: true;
   chat: {
@@ -102,12 +99,9 @@ type ChatTranscriptResponse = {
       role: "user" | "assistant";
       content: string;
       createdAt: string;
-      intent?: string | null;
-      toolNames?: string[];
+      method?: ChatServiceIntent;
       serviceMode?: ChatServiceMode;
-      answerShape?: ChatAnswerShape;
-      answerStatus?: FortuneAnswer["status"];
-      conclusion?: ChatConclusion;
+      showRitual?: boolean;
     }>;
   };
 };
@@ -124,15 +118,14 @@ type ChatTurn = {
   errorData?: ChatErrorData;
   errorMessage?: string;
   historyMeta?: {
-    intent: string | null;
-    toolNames: string[];
+    method: ChatServiceIntent;
     updatedAt: string;
     serviceMode?: ChatServiceMode;
-    answerShape?: ChatAnswerShape;
-    answerStatus?: FortuneAnswer["status"];
-    conclusion?: ChatConclusion;
+    showRitual: boolean;
   };
 };
+
+type FeedbackState = "idle" | "submitting" | "submitted" | "error";
 
 const suggestedQuestions = [
   "我最近事业有点迷茫，适合换方向吗？",
@@ -140,32 +133,6 @@ const suggestedQuestions = [
   "我手里的两个选择，哪一个更适合现在的我？",
   "结合我的档案，看看今年下半年的重点节奏。",
 ] as const;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function getNestedRecord(value: unknown, key: string) {
-  if (!isRecord(value)) {
-    return null;
-  }
-
-  const next = value[key];
-  return isRecord(next) ? next : null;
-}
-
-function getNestedArray(value: unknown, key: string) {
-  if (!isRecord(value)) {
-    return [];
-  }
-
-  const next = value[key];
-  return Array.isArray(next) ? next : [];
-}
-
-function textValue(value: unknown) {
-  return typeof value === "string" ? value : "";
-}
 
 async function readJson<T>(response: Response) {
   const data = (await response.json()) as T & { ok: boolean; message?: string };
@@ -208,72 +175,15 @@ function looksLikeBackendErrorText(text: string) {
   }
 
   try {
-    const data = JSON.parse(trimmed) as { ok?: unknown; code?: unknown; message?: unknown };
-    return data.ok === false || typeof data.code === "string" || typeof data.message === "string";
+    const data = JSON.parse(trimmed) as { ok?: unknown; message?: unknown };
+    return data.ok === false || typeof data.message === "string";
   } catch {
     return false;
   }
 }
 
-function toolSummary(tool: AiToolCall) {
-  if (tool.name === "intent_classifier") {
-    const intent = textValue(isRecord(tool.result) ? tool.result.intent : "");
-    return intent ? `已识别为 ${getIntentLabel(intent)}咨询。` : "已完成问题类型识别。";
-  }
-
-  if (tool.name === "profile_reader") {
-    const completeness = isRecord(tool.result) ? tool.result.completeness : undefined;
-    return typeof completeness === "number" ? `已读取档案，完整度 ${completeness}%。` : "已尝试读取会员档案。";
-  }
-
-  if (tool.name === "tarot_spread_generator") {
-    const cards = getNestedArray(tool.result, "cards");
-    const spreadTitle = textValue(isRecord(tool.result) ? tool.result.spreadTitle : "") || "塔罗牌阵";
-    const cardNames = cards
-      .map((card) => (isRecord(card) ? textValue(card.card) : ""))
-      .filter(Boolean);
-    return cardNames.length > 0 ? `${spreadTitle}：${cardNames.join("、")}。` : `已完成${spreadTitle}。`;
-  }
-
-  if (tool.name === "bazi_calculator") {
-    const chart = getNestedRecord(tool.result, "chart");
-    const dayMaster = getNestedRecord(chart, "dayMaster");
-    const bazi = getNestedArray(chart, "bazi").map(String);
-    const strength = textValue(dayMaster?.strengthLabel);
-    const useful = getNestedArray(dayMaster, "usefulElements").map(String).join("、");
-    return bazi.length > 0
-      ? `四柱：${bazi.join("、")}。${strength ? `日主${strength}` : ""}${useful ? `，喜用 ${useful}` : ""}。`
-      : "已完成八字命盘详析。";
-  }
-
-  if (tool.name === "birth_info_checker") {
-    const required = getNestedArray(tool.result, "required").map(String);
-    return required.length > 0 ? `还需要补充：${required.join("、")}。` : "出生信息还不完整。";
-  }
-
-  if (tool.name === "bagua_generator") {
-    const chart = getNestedRecord(tool.result, "chart");
-    const mainHexagram = getNestedRecord(chart, "mainHexagram");
-    const changedHexagram = getNestedRecord(chart, "changedHexagram");
-    const mainName = textValue(mainHexagram?.name);
-    const changedName = textValue(changedHexagram?.name);
-    const mainNumber = typeof mainHexagram?.number === "number" ? String(mainHexagram.number) : textValue(mainHexagram?.number);
-    const changedNumber = typeof changedHexagram?.number === "number" ? String(changedHexagram.number) : textValue(changedHexagram?.number);
-    return mainName && changedName
-      ? `本卦${mainNumber ? `第 ${mainNumber} 卦 ` : " "}${mainName}，变卦${changedNumber ? `第 ${changedNumber} 卦 ` : " "}${changedName}。`
-      : "已完成六十四卦问事。";
-  }
-
-  if (tool.name === "palm_image_checker") {
-    const imageId = textValue(isRecord(tool.result) ? tool.result.imageId : "");
-    return imageId ? "手相图片已完成校验。" : "已进入手相图片校验链路。";
-  }
-
-  return "工具已返回结果。";
-}
-
 function hasProcessTrace(trace: ChatTrace | null) {
-  return Boolean(trace && (trace.steps.length > 0 || trace.toolCalls.length > 0));
+  return Boolean(trace && (trace.steps.length > 0 || trace.evidence.length > 0));
 }
 
 function formatChatTime(value: string) {
@@ -292,20 +202,20 @@ function formatChatTime(value: string) {
   });
 }
 
-function getIntentLabel(intent: string | null) {
-  if (intent === "tarot") {
+function getMethodLabel(method: ChatServiceIntent) {
+  if (method === "tarot") {
     return "塔罗";
   }
 
-  if (intent === "bazi") {
+  if (method === "bazi") {
     return "八字";
   }
 
-  if (intent === "bagua") {
+  if (method === "bagua") {
     return "八卦";
   }
 
-  if (intent === "palm") {
+  if (method === "palm") {
     return "手相";
   }
 
@@ -321,12 +231,7 @@ function createRecentChatFromResult(question: string, data: SuccessChatResponse)
     title,
     question,
     answer: data.answer,
-    intent: data.intent,
-    provider: data.provider,
-    model: data.model,
-    toolNames: data.toolCalls.map((tool) => tool.name),
-    tokensIn: data.tokensIn ?? null,
-    tokensOut: data.tokensOut ?? null,
+    method: data.method,
     createdAt: now,
     updatedAt: now,
   };
@@ -374,18 +279,16 @@ function createTrace(
   }
 
   return {
-    intent: source.intent,
+    method: source.method,
     steps: source.steps,
-    toolCalls: source.toolCalls,
-    contextSummary: source.contextSummary,
-    answerShape: source.answerShape,
-    qualityTrace: source.qualityTrace,
+    evidence: source.evidence,
+    showRitual: source.showRitual,
   };
 }
 
 function buildChatTurns(
   messages: XuanjiChatMessage[],
-  status: ChatStatus,
+  status: XuanjiChatStatus,
   error: Error | undefined,
 ) {
   const turns: ChatTurn[] = [];
@@ -479,7 +382,7 @@ function ToolTrace({
         </span>
         <span className="font-medium text-[#cfc6b8]">推演依据</span>
         <span className="rounded-full border border-[#323128] px-2 py-0.5 text-[10px] text-[#80796e]">
-          {getIntentLabel(processSource.intent)} · {processSource.toolCalls.length} 项
+          {getMethodLabel(processSource.method)} · {processSource.evidence.length} 项
         </span>
         <ChevronRight size={15} className="ml-auto transition group-open:rotate-90" aria-hidden="true" />
       </summary>
@@ -497,17 +400,17 @@ function ToolTrace({
           ))}
         </div>
 
-        {processSource.toolCalls.length > 0 ? (
+        {processSource.evidence.length > 0 ? (
           <div className="mt-5 space-y-2 border-t border-[#24251f] pt-4">
-            {processSource.toolCalls.map((tool) => (
-              <details key={`${tool.name}-${tool.label}`} className="rounded-xl border border-[#292a24] bg-[#0d0e0c]">
+            {processSource.evidence.map((item, index) => (
+              <details key={`${item.label}-${index}`} className="rounded-xl border border-[#292a24] bg-[#0d0e0c]">
                 <summary className="flex list-none items-center gap-3 px-3 py-2.5 marker:content-none">
                   <WandSparkles size={14} className="text-[#c9a35f]" aria-hidden="true" />
-                  <span className="text-xs font-medium text-[#c8c0b2]">{tool.label}</span>
-                  <span className="ml-auto text-[10px] text-[#6f6a60]">{tool.status === "completed" ? "已完成" : "待补充"}</span>
+                  <span className="text-xs font-medium text-[#c8c0b2]">{item.label}</span>
+                  <span className="ml-auto text-[10px] text-[#6f6a60]">{item.status === "completed" ? "已完成" : "待补充"}</span>
                 </summary>
                 <div className="border-t border-[#24251f] px-3 py-3">
-                  <p className="text-xs leading-6 text-[#8f887b]">{toolSummary(tool)}</p>
+                  <p className="text-xs leading-6 text-[#8f887b]">{item.summary}</p>
                 </div>
               </details>
             ))}
@@ -522,25 +425,26 @@ function ConversationTurn({
   turn,
   copiedId,
   retrying,
-  reportingFeedback,
+  feedbackState,
   onCopy,
   onRetry,
+  onRecover,
   onLightweight,
   onFeedback,
-  onFollowUp,
 }: {
   turn: ChatTurn;
   copiedId: string | null;
   retrying: boolean;
-  reportingFeedback: boolean;
+  feedbackState: FeedbackState;
   onCopy: (turn: ChatTurn) => void;
   onRetry: (turn: ChatTurn) => void;
+  onRecover: (turn: ChatTurn) => void;
   onLightweight: (turn: ChatTurn) => void;
   onFeedback: (turn: ChatTurn) => void;
-  onFollowUp: (question: string) => void;
 }) {
-  const answerShape = turn.result?.answerShape ?? turn.trace?.answerShape ?? turn.historyMeta?.answerShape;
-  const showRitual = answerShape !== "identity_boundary" && answerShape !== "missing_info";
+  const showRitual = turn.result?.showRitual ?? turn.trace?.showRitual ?? turn.historyMeta?.showRitual ?? false;
+  const feedbackSubmitting = feedbackState === "submitting";
+  const feedbackSubmitted = feedbackState === "submitted";
 
   return (
     <article className="xuanji-chat-turn py-7 sm:py-9">
@@ -554,7 +458,7 @@ function ConversationTurn({
           {turn.state === "loading" || turn.state === "streaming" ? (
             <>
               {showRitual ? (
-                <ChatRitual progress={turn.progress} intent={turn.trace?.intent ?? null} loading />
+                <ChatRitual progress={turn.progress} method={turn.trace?.method ?? null} loading />
               ) : null}
               {turn.answer ? (
                 <div
@@ -577,27 +481,33 @@ function ConversationTurn({
           {turn.state === "error" ? (
             <div className="space-y-4">
               {showRitual && turn.progress.length > 0 ? (
-                <ChatRitual progress={turn.progress} intent={turn.trace?.intent ?? null} loading={false} />
+                <ChatRitual progress={turn.progress} method={turn.trace?.method ?? null} loading={false} />
               ) : null}
               {turn.answer ? (
                 <MarkdownMessage content={turn.answer} />
               ) : null}
               <div className="rounded-lg border border-[#b84b37]/30 bg-[#1b100d] px-4 py-4 text-sm leading-7 text-[#d99787]">
                 <p className="font-medium text-[#efb0a1]">
-                  {turn.errorData?.refunded
-                    ? "本轮没有生成成功，已退回本次星力。"
-                    : "本轮没有生成成功，也没有产生可用回答。"}
+                  {turn.errorData?.settlementStatus === "refunded"
+                    ? "本轮没有生成成功，已退回本次问答次数。"
+                    : turn.errorData?.settlementStatus === "not_charged"
+                      ? "本轮没有生成成功，也没有计入问答次数。"
+                      : turn.errorData?.settlementStatus === "pending"
+                        ? "回答已生成，保存状态待确认。"
+                        : "本轮没有生成成功，也没有产生可用回答。"}
                 </p>
                 <p className="mt-1 text-xs leading-6 text-[#a9796d]">{turn.errorMessage ?? "服务临时中断，可以保留当前问题重新发起。"}</p>
                 <div className="mt-4 flex flex-wrap gap-2">
                   <button
                     type="button"
-                    onClick={() => onRetry(turn)}
+                    onClick={() => turn.errorData?.settlementStatus === "pending"
+                      ? onRecover(turn)
+                      : onRetry(turn)}
                     disabled={retrying}
                     className="inline-flex h-9 items-center gap-2 rounded-md border border-[#b84b37]/35 px-3 text-xs font-medium text-[#f1b1a2] transition hover:border-[#e2907d]/55 hover:bg-[#b84b37]/10 disabled:opacity-45"
                   >
                     <RefreshCw size={13} className={retrying ? "animate-spin" : ""} aria-hidden="true" />
-                    重新生成
+                    {turn.errorData?.settlementStatus === "pending" ? "确认保存状态" : "重新生成"}
                   </button>
                   {turn.serviceMode !== "quick" ? (
                     <button
@@ -613,11 +523,30 @@ function ConversationTurn({
                   <button
                     type="button"
                     onClick={() => onFeedback(turn)}
-                    disabled={reportingFeedback}
-                    className="inline-flex h-9 items-center gap-2 rounded-md px-3 text-xs font-medium text-[#9a9387] transition hover:bg-[#24201d] hover:text-[#d7cfc2] disabled:opacity-45"
+                    disabled={feedbackSubmitting || feedbackSubmitted}
+                    className={`inline-flex h-9 items-center gap-2 rounded-md border px-3 text-xs font-medium transition disabled:cursor-default ${
+                      feedbackSubmitted
+                        ? "border-[#79b8b1]/30 bg-[#79b8b1]/8 text-[#9fd0ca]"
+                        : feedbackState === "error"
+                          ? "border-[#b84b37]/30 text-[#d99787] hover:bg-[#b84b37]/10"
+                          : "border-transparent text-[#9a9387] hover:bg-[#24201d] hover:text-[#d7cfc2] disabled:opacity-60"
+                    }`}
+                    aria-live="polite"
                   >
-                    <LifeBuoy size={13} aria-hidden="true" />
-                    {reportingFeedback ? "提交中" : "反馈问题"}
+                    {feedbackSubmitting ? (
+                      <Loader2 size={13} className="animate-spin" aria-hidden="true" />
+                    ) : feedbackSubmitted ? (
+                      <Check size={13} aria-hidden="true" />
+                    ) : (
+                      <LifeBuoy size={13} aria-hidden="true" />
+                    )}
+                    {feedbackSubmitting
+                      ? "正在提交"
+                      : feedbackSubmitted
+                        ? "故障已反馈"
+                        : feedbackState === "error"
+                          ? "重试反馈"
+                          : "反馈本次故障"}
                   </button>
                 </div>
               </div>
@@ -627,7 +556,7 @@ function ConversationTurn({
           {turn.state === "complete" ? (
             <>
               {showRitual && turn.progress.length > 0 ? (
-                <ChatRitual progress={turn.progress} intent={turn.result?.intent ?? turn.trace?.intent ?? null} loading={false} />
+                <ChatRitual progress={turn.progress} method={turn.result?.method ?? turn.trace?.method ?? null} loading={false} />
               ) : null}
               {hasProcessTrace(turn.result ?? turn.trace) ? (
                 <ToolTrace
@@ -638,29 +567,18 @@ function ConversationTurn({
               {turn.historyMeta ? (
                 <div className="mb-4 flex flex-wrap items-center gap-2 text-[10px] text-[#777168]">
                   <span className="rounded-full border border-[#323128] px-2.5 py-1">历史对话</span>
-                  <span>{getIntentLabel(turn.historyMeta.intent)}</span>
-                  <span>·</span>
-                  <span>{turn.historyMeta.toolNames.length} 个工具</span>
+                  <span>{getMethodLabel(turn.historyMeta.method)}</span>
                   <span>·</span>
                   <span>{formatChatTime(turn.historyMeta.updatedAt)}</span>
                 </div>
               ) : null}
               {turn.result?.turnStatus === "PARTIAL" ? (
                 <div className="mb-4 border-l-2 border-[#c9a35f] pl-3 text-xs leading-6 text-[#aaa294]">
-                  本轮生成中途停止，当前可见内容已保存并按一轮结算。
+                  本轮传输中断，服务器已恢复完整回答；
+                  {turn.result.counted ? "本轮计 1 次问答。" : "本轮未计入问答次数。"}
                 </div>
               ) : null}
               <MarkdownMessage content={turn.answer} />
-              {(turn.result?.conclusion ?? turn.historyMeta?.conclusion) &&
-              (turn.result?.answerShape ?? turn.historyMeta?.answerShape) !== "identity_boundary" ? (
-                <ChatConclusionCard
-                  conclusion={(turn.result?.conclusion ?? turn.historyMeta?.conclusion)!}
-                  serviceMode={turn.serviceMode}
-                  answerShape={turn.result?.answerShape ?? turn.historyMeta?.answerShape}
-                  answerStatus={turn.result?.structuredAnswer.status ?? turn.historyMeta?.answerStatus}
-                  onFollowUp={onFollowUp}
-                />
-              ) : null}
               <div className="mt-5 flex items-center gap-2">
                 <button
                   type="button"
@@ -682,7 +600,7 @@ function ConversationTurn({
 function ChatSidebar({
   recentChats,
   activeChatId,
-  balance,
+  quota,
   account,
   className,
   onNewChat,
@@ -693,7 +611,7 @@ function ChatSidebar({
 }: {
   recentChats: RecentChatSession[];
   activeChatId: string | null;
-  balance: number;
+  quota: ChatQuotaSummary;
   account: ChatAccountSummary;
   className?: string;
   onNewChat: () => void;
@@ -811,7 +729,7 @@ function ChatSidebar({
                       >
                         <span className="block truncate text-sm">{chat.title}</span>
                         <span className="mt-1 block text-[10px] text-[#5f5b53]">
-                          {getIntentLabel(chat.intent)} · {formatChatTime(chat.updatedAt)}
+                          {getMethodLabel(chat.method)} · {formatChatTime(chat.updatedAt)}
                         </span>
                       </button>
                       <div className="flex items-center gap-0.5 pr-1 opacity-100 md:opacity-0 md:transition md:group-hover:opacity-100">
@@ -863,7 +781,7 @@ function ChatSidebar({
           </span>
           <span className="min-w-0 flex-1">
             <span className="block truncate text-xs text-[#c8c0b2]">{account.email}</span>
-            <span className="mt-0.5 block text-[10px] text-[#67635b]">{account.tier} · {balance} 星力</span>
+            <span className="mt-0.5 block text-[10px] text-[#67635b]">{account.tier} · 本月问答 {quota.remaining}/{quota.total} 次</span>
           </span>
           <ChevronRight size={14} className="text-[#5f5b53]" aria-hidden="true" />
         </button>
@@ -875,16 +793,16 @@ function ChatSidebar({
 function ProfileDrawer({
   open,
   balance,
+  quota,
   profile,
   account,
-  inviteUrl,
   onClose,
 }: {
   open: boolean;
   balance: number;
+  quota: ChatQuotaSummary;
   profile: ChatProfileSummary;
   account: ChatAccountSummary;
-  inviteUrl: string;
   onClose: () => void;
 }) {
   const reduceMotion = useReducedMotion();
@@ -936,6 +854,13 @@ function ProfileDrawer({
                   <p className="mt-1 text-2xl text-[#eee6d8]">{balance}</p>
                 </div>
                 <div className="rounded-2xl border border-[#2a2b25] bg-[#11120f] p-4">
+                  <MessageCircle size={17} className="text-[#79b8b1]" aria-hidden="true" />
+                  <p className="mt-3 text-xs text-[#777168]">本月问答</p>
+                  <p className="mt-1 text-2xl text-[#eee6d8]">
+                    {quota.remaining}<span className="text-sm text-[#777168]">/{quota.total}</span>
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-[#2a2b25] bg-[#11120f] p-4 sm:col-span-2">
                   <Database size={17} className="text-[#79b8b1]" aria-hidden="true" />
                   <p className="mt-3 text-xs text-[#777168]">档案完整度</p>
                   <p className="mt-1 text-2xl text-[#eee6d8]">{profile.completeness}%</p>
@@ -968,20 +893,11 @@ function ProfileDrawer({
               ) : null}
 
               <div className="mt-6 space-y-2 border-t border-[#24251f] pt-5">
-                <Link href="/onboarding?edit=1" className="flex h-11 items-center justify-between rounded-xl px-3 text-sm text-[#c8c0b2] transition hover:bg-[#191a16]">
-                  完善命理档案
-                  <ChevronRight size={15} aria-hidden="true" />
-                </Link>
-                <InviteCopyButton
-                  inviteUrl={inviteUrl}
-                  label="邀请好友得星力"
-                  className="flex h-11 w-full items-center gap-3 rounded-xl border border-[#3c8b72]/25 bg-[#3c8b72]/8 px-3 text-sm text-[#8ad5bd] transition hover:border-[#8ad5bd]/45 hover:bg-[#3c8b72]/12"
-                />
                 <Link href="/reports/deep" className="flex h-11 items-center justify-between rounded-xl px-3 text-sm text-[#c8c0b2] transition hover:bg-[#191a16]">
                   深度报告
                   <ChevronRight size={15} aria-hidden="true" />
                 </Link>
-                <Link href="/member" className="flex h-11 items-center justify-between rounded-xl px-3 text-sm text-[#c8c0b2] transition hover:bg-[#191a16]">
+                <Link href="/member/profile" className="flex h-11 items-center justify-between rounded-xl px-3 text-sm text-[#c8c0b2] transition hover:bg-[#191a16]">
                   个人中心
                   <span className="text-xs text-[#67635b]">{account.tier}</span>
                 </Link>
@@ -1128,6 +1044,7 @@ function AttachmentPreview({
 
 export function ChatClient({
   initialBalance,
+  initialQuota,
   initialRecentChats,
   initialReadingMethod,
   initialQuestion,
@@ -1136,6 +1053,7 @@ export function ChatClient({
   inviteUrl,
 }: {
   initialBalance: number;
+  initialQuota: ChatQuotaSummary;
   initialRecentChats: RecentChatSession[];
   initialReadingMethod?: ChatReadingMethod;
   initialQuestion?: string;
@@ -1145,6 +1063,7 @@ export function ChatClient({
 }) {
   const [question, setQuestion] = useState(initialQuestion ?? "");
   const [balance, setBalance] = useState(initialBalance);
+  const [quota, setQuota] = useState<ChatQuotaSummary>(initialQuota);
   const [uploading, setUploading] = useState(false);
   const [deletingImage, setDeletingImage] = useState(false);
   const [statusMessage, setStatusMessage] = useState("输入问题后可确认本次服务与预计消耗。");
@@ -1160,7 +1079,7 @@ export function ChatClient({
   const [profileOpen, setProfileOpen] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [retryingTurnId, setRetryingTurnId] = useState<string | null>(null);
-  const [reportingTurnId, setReportingTurnId] = useState<string | null>(null);
+  const [feedbackStates, setFeedbackStates] = useState<Record<string, FeedbackState>>({});
   const [modeOverride, setModeOverride] = useState<ChatServiceMode | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1169,11 +1088,12 @@ export function ChatClient({
   const shouldAutoScrollRef = useRef(true);
   const palmPreviewUrlRef = useRef("");
   const lastStreamOutcomeRef = useRef<"generating" | "complete" | "partial" | "replay" | "error" | null>(null);
+  const historyRequestRef = useRef<{
+    id: number;
+    controller: AbortController;
+  } | null>(null);
+  const historyRequestSequenceRef = useRef(0);
   const [showScrollButton, setShowScrollButton] = useState(false);
-  const transport = useMemo(
-    () => new DefaultChatTransport<XuanjiChatMessage>({ api: "/api/chat" }),
-    [],
-  );
   const {
     messages,
     setMessages,
@@ -1182,10 +1102,22 @@ export function ChatClient({
     error: chatError,
     stop,
     clearError,
-  } = useChat<XuanjiChatMessage>({
-    transport,
-    throttle: 45,
+  } = useXuanjiChat({
+    throttleMs: 45,
     onData(part) {
+      if (part.type === "data-chatReserved") {
+        setBalance(part.data.balanceAfter);
+        setQuota({
+          total: part.data.quotaTotal,
+          used: part.data.quotaUsed,
+          remaining: part.data.quotaRemaining,
+        });
+        setActiveChatId(part.data.chatSessionId);
+        lastStreamOutcomeRef.current = "generating";
+        setStatusMessage("本轮已开始，可随时停止生成。");
+        return;
+      }
+
       if (part.type === "data-chatProgress") {
         setStatusMessage(part.data.detail);
         return;
@@ -1193,6 +1125,11 @@ export function ChatClient({
 
       if (part.type === "data-chatStart") {
         setBalance(part.data.balanceAfter);
+        setQuota({
+          total: part.data.quotaTotal,
+          used: part.data.quotaUsed,
+          remaining: part.data.quotaRemaining,
+        });
         setActiveChatId(part.data.chatSessionId);
         lastStreamOutcomeRef.current = part.data.replayed ? "replay" : "generating";
         setStatusMessage(part.data.replayed ? "正在恢复已完成的回答..." : "推演准备完成，正在生成回答...");
@@ -1201,6 +1138,11 @@ export function ChatClient({
 
       if (part.type === "data-chatComplete") {
         setBalance(part.data.balanceAfter);
+        setQuota({
+          total: part.data.quotaTotal,
+          used: part.data.quotaUsed,
+          remaining: part.data.quotaRemaining,
+        });
         setActiveChatId(part.data.chatSessionId);
         setRecentChats((current) => {
           const existing = current.find((chat) => chat.id === part.data.chatSessionId);
@@ -1223,10 +1165,14 @@ export function ChatClient({
             : "complete";
         setStatusMessage(
           part.data.replayed
-            ? `已恢复原回答，未重复扣费。当前剩余 ${part.data.balanceAfter} 星力。`
-            : part.data.turnStatus === "PARTIAL"
-              ? `回答已部分保存，本轮消耗 ${part.data.cost} 星力，剩余 ${part.data.balanceAfter} 星力。`
-              : `本次消耗 ${part.data.cost} 星力，剩余 ${part.data.balanceAfter} 星力。`,
+            ? part.data.turnStatus === "PARTIAL"
+              ? `已恢复传输中断后的完整回答，未重复计次。本月还剩 ${part.data.quotaRemaining}/${part.data.quotaTotal} 次问答。`
+              : `已恢复原回答，未重复计次。本月还剩 ${part.data.quotaRemaining}/${part.data.quotaTotal} 次问答。`
+            : !part.data.counted
+              ? `本轮回答未计次，本月还剩 ${part.data.quotaRemaining}/${part.data.quotaTotal} 次问答。`
+              : part.data.turnStatus === "PARTIAL"
+                ? `回答已部分保存，本轮计 1 次问答，本月还剩 ${part.data.quotaRemaining}/${part.data.quotaTotal} 次。`
+                : `本次计 1 次问答，本月还剩 ${part.data.quotaRemaining}/${part.data.quotaTotal} 次。`,
         );
         resetAttachmentLocally();
         return;
@@ -1234,6 +1180,11 @@ export function ChatClient({
 
       if (part.type === "data-chatError") {
         setBalance(part.data.balanceAfter);
+        setQuota({
+          total: part.data.quotaTotal,
+          used: part.data.quotaUsed,
+          remaining: part.data.quotaRemaining,
+        });
         lastStreamOutcomeRef.current = "error";
         setStatusMessage(part.data.message);
       }
@@ -1249,11 +1200,23 @@ export function ChatClient({
     onFinish({ message, isAbort, isError }) {
       if (isAbort) {
         const hasAnswer = getMessageText(message).trim().length > 0;
-        setStatusMessage(
-          hasAnswer
-            ? "已停止生成，当前回答已保存并按本轮结算。"
-            : "已停止生成；尚未输出内容时，本次星力会自动退回。",
-        );
+        const reservedPart = getMessagePart(message, "data-chatReserved") as
+          | Extract<ChatMessagePart, { type: "data-chatReserved" }>
+          | undefined;
+        const startPart = getMessagePart(message, "data-chatStart") as ChatStartPart | undefined;
+        const sessionId = startPart?.data.chatSessionId ?? reservedPart?.data.chatSessionId;
+
+        if (hasAnswer && sessionId) {
+          setStatusMessage("已停止生成，正在确认服务器保存的完整回答...");
+          window.setTimeout(() => {
+            void selectRecentChat(
+              { id: sessionId },
+              { force: true, recovery: true },
+            );
+          }, 0);
+        } else {
+          setStatusMessage("已停止生成；尚未输出内容时，本次问答次数会自动退回。");
+        }
       } else if (isError && lastStreamOutcomeRef.current !== "error" && lastStreamOutcomeRef.current !== "partial") {
         setStatusMessage("回答生成中断，请稍后再试。");
       }
@@ -1267,11 +1230,11 @@ export function ChatClient({
   const reduceMotion = useReducedMotion();
   const sendingBusy = loading || uploading || deletingImage || loadingChatId !== null;
   const busy = sendingBusy || retryingTurnId !== null;
-  const serviceBrief = useMemo(
-    () => inferChatService(question, Boolean(palmFile || palmImage)),
-    [question, palmFile, palmImage],
-  );
-  const selectedServiceMode = modeOverride ?? serviceBrief.recommendedMode;
+  const recommendedServiceMode: ChatServiceMode =
+    initialReadingMethod || palmFile || palmImage || question.trim().length >= 36
+      ? "formal"
+      : "quick";
+  const selectedServiceMode = modeOverride ?? recommendedServiceMode;
 
   useEffect(() => {
     palmPreviewUrlRef.current = palmPreviewUrl;
@@ -1295,6 +1258,12 @@ export function ChatClient({
       }
     };
   }, [palmPreviewUrl]);
+
+  useEffect(() => {
+    return () => {
+      historyRequestRef.current?.controller.abort();
+    };
+  }, []);
 
   function resetAttachmentLocally() {
     if (palmPreviewUrlRef.current) {
@@ -1416,10 +1385,8 @@ export function ChatClient({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           key: tokenData.key,
-          url: tokenData.publicUrl,
           contentType: palmFile.type,
           sizeBytes: palmFile.size,
-          originalName: palmFile.name,
           provider: tokenData.mode,
           hash,
         }),
@@ -1478,6 +1445,9 @@ export function ChatClient({
       return;
     }
 
+    historyRequestRef.current?.controller.abort();
+    historyRequestRef.current = null;
+    setLoadingChatId(null);
     setMessages([]);
     clearError();
     setActiveChatId(null);
@@ -1492,19 +1462,35 @@ export function ChatClient({
     window.requestAnimationFrame(() => textareaRef.current?.focus());
   }
 
-  async function selectRecentChat(chat: RecentChatSession) {
-    if (busy) {
+  async function selectRecentChat(
+    chat: Pick<RecentChatSession, "id">,
+    options: { force?: boolean; recovery?: boolean } = {},
+  ) {
+    if (busy && !options.force) {
       return;
     }
 
+    historyRequestRef.current?.controller.abort();
+    const requestId = historyRequestSequenceRef.current + 1;
+    const controller = new AbortController();
+    historyRequestSequenceRef.current = requestId;
+    historyRequestRef.current = { id: requestId, controller };
     setLoadingChatId(chat.id);
-    setStatusMessage("正在加载完整对话...");
+    setStatusMessage(options.recovery
+      ? "正在确认服务器保存的完整回答..."
+      : "正在加载完整对话...");
 
     try {
       const response = await fetch(`/api/chat/sessions/${encodeURIComponent(chat.id)}`, {
         cache: "no-store",
+        signal: controller.signal,
       });
       const data = await readJson<ChatTranscriptResponse>(response);
+
+      if (historyRequestRef.current?.id !== requestId) {
+        return;
+      }
+
       const restoredMessages: XuanjiChatMessage[] = data.chat.messages.map((message) => ({
         id: message.id,
         role: message.role,
@@ -1512,13 +1498,10 @@ export function ChatClient({
           ? {
               metadata: {
                   history: {
-                    intent: message.intent ?? null,
-                    toolNames: message.toolNames ?? [],
+                    method: message.method ?? "general",
                     updatedAt: message.createdAt,
                     serviceMode: message.serviceMode,
-                    answerShape: message.answerShape,
-                    answerStatus: message.answerStatus,
-                    conclusion: message.conclusion,
+                    showRitual: message.showRitual ?? false,
                 },
               },
             }
@@ -1533,11 +1516,19 @@ export function ChatClient({
       shouldAutoScrollRef.current = true;
       setShowScrollButton(false);
       setMobileSidebarOpen(false);
-      setStatusMessage(`已恢复 ${Math.ceil(restoredMessages.length / 2)} 轮对话。`);
+      setStatusMessage(options.recovery
+        ? "已停止生成，并恢复服务器保存的完整回答。"
+        : `已恢复 ${Math.ceil(restoredMessages.length / 2)} 轮对话。`);
     } catch (error) {
+      if (controller.signal.aborted) {
+        return;
+      }
       setStatusMessage(error instanceof Error ? error.message : "完整对话加载失败。");
     } finally {
-      setLoadingChatId(null);
+      if (historyRequestRef.current?.id === requestId) {
+        historyRequestRef.current = null;
+        setLoadingChatId(null);
+      }
     }
   }
 
@@ -1638,6 +1629,11 @@ export function ChatClient({
       serviceMode?: ChatServiceMode;
     } = {},
   ) {
+    if (historyRequestRef.current) {
+      setStatusMessage("完整对话仍在加载，请稍候再发送。");
+      return;
+    }
+
     const trimmedQuestion = rawQuestion.trim();
     const requestedMode = options.serviceMode ?? selectedServiceMode;
 
@@ -1724,6 +1720,20 @@ export function ChatClient({
     }
   }
 
+  async function recoverPendingTurn(turn: ChatTurn) {
+    if (sendingBusy || retryingTurnId || !activeChatId) {
+      return;
+    }
+
+    setRetryingTurnId(turn.id);
+
+    try {
+      await selectRecentChat({ id: activeChatId });
+    } finally {
+      setRetryingTurnId(null);
+    }
+  }
+
   async function answerLightweight(turn: ChatTurn) {
     if (sendingBusy || retryingTurnId) {
       return;
@@ -1743,11 +1753,13 @@ export function ChatClient({
   }
 
   async function reportFailure(turn: ChatTurn) {
-    if (reportingTurnId) {
+    const currentState = feedbackStates[turn.id];
+
+    if (currentState === "submitting" || currentState === "submitted") {
       return;
     }
 
-    setReportingTurnId(turn.id);
+    setFeedbackStates((current) => ({ ...current, [turn.id]: "submitting" }));
 
     try {
       const response = await fetch("/api/chat/feedback", {
@@ -1755,33 +1767,33 @@ export function ChatClient({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           turnId: turn.errorData?.turnId,
-          code: turn.errorData?.code ?? "CHAT_CLIENT_ERROR",
           question: turn.question,
         }),
       });
 
-      if (!response.ok) {
-        throw new Error("反馈提交失败");
-      }
+      await readJson<{ ok: true }>(response);
 
+      setFeedbackStates((current) => ({ ...current, [turn.id]: "submitted" }));
       setStatusMessage("反馈已提交，我们会结合本轮错误记录排查。");
-    } catch {
-      setStatusMessage("反馈暂时没有提交成功，请稍后再试。");
-    } finally {
-      setReportingTurnId(null);
-    }
-  }
+      toast.success("故障记录已提交", {
+        description: "我们会结合本轮错误记录排查，不会再次扣除问答次数。",
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "反馈暂时无法提交。";
 
-  function prepareFollowUp(nextQuestion: string) {
-    setQuestion(nextQuestion);
-    setModeOverride(null);
-    shouldAutoScrollRef.current = true;
-    setShowScrollButton(false);
-    window.requestAnimationFrame(() => textareaRef.current?.focus());
+      setFeedbackStates((current) => ({ ...current, [turn.id]: "error" }));
+      setStatusMessage("反馈暂时没有提交成功，请稍后再试。");
+      toast.error("反馈提交失败", { description: message });
+    }
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (busy || historyRequestRef.current) {
+      return;
+    }
+
     void ask();
   }
 
@@ -1795,7 +1807,7 @@ export function ChatClient({
     }
   }
 
-  const showTopUpAction = /星力不足|额度不足/.test(statusMessage);
+  const showTopUpAction = /星力不足|问答次数|额度不足/.test(statusMessage);
 
   return (
     <div className="flex h-[100dvh] overflow-hidden bg-[#080907] text-[#f4efe5]">
@@ -1803,7 +1815,7 @@ export function ChatClient({
         className="hidden md:flex"
         recentChats={recentChats}
         activeChatId={activeChatId}
-        balance={balance}
+        quota={quota}
         account={account}
         onNewChat={startNewChat}
         onSelectChat={selectRecentChat}
@@ -1835,7 +1847,7 @@ export function ChatClient({
                 className="flex w-[86vw] max-w-[310px]"
                 recentChats={recentChats}
                 activeChatId={activeChatId}
-                balance={balance}
+                quota={quota}
                 account={account}
                 onNewChat={startNewChat}
                 onSelectChat={selectRecentChat}
@@ -1867,7 +1879,7 @@ export function ChatClient({
           </div>
           <span className="hidden items-center gap-1.5 rounded-full border border-[#2a2b25] px-3 py-1.5 text-xs text-[#8f887b] sm:inline-flex">
             <Coins size={13} className="text-[#c9a35f]" aria-hidden="true" />
-            {balance}
+            问答 {quota.remaining}/{quota.total}
           </span>
           <InviteCopyButton
             inviteUrl={inviteUrl}
@@ -1900,12 +1912,12 @@ export function ChatClient({
                     turn={turn}
                     copiedId={copiedId}
                     retrying={retryingTurnId === turn.id}
-                    reportingFeedback={reportingTurnId === turn.id}
+                    feedbackState={feedbackStates[turn.id] ?? "idle"}
                     onCopy={(selectedTurn) => void copyTurn(selectedTurn)}
                     onRetry={(selectedTurn) => void retryTurn(selectedTurn)}
+                    onRecover={(selectedTurn) => void recoverPendingTurn(selectedTurn)}
                     onLightweight={(selectedTurn) => void answerLightweight(selectedTurn)}
                     onFeedback={(selectedTurn) => void reportFailure(selectedTurn)}
-                    onFollowUp={prepareFollowUp}
                   />
                 ))}
               </div>
@@ -1991,7 +2003,7 @@ export function ChatClient({
                   <motion.button
                     type={loading ? "button" : "submit"}
                     onClick={loading ? stopGenerating : undefined}
-                    disabled={!loading && (uploading || deletingImage || question.trim().length < 2)}
+                    disabled={!loading && (busy || question.trim().length < 2)}
                     whileTap={reduceMotion ? undefined : { scale: 0.92 }}
                     transition={{ type: "spring", stiffness: 520, damping: 30 }}
                     className={`flex size-9 items-center justify-center rounded-full transition-colors ${
@@ -2032,9 +2044,9 @@ export function ChatClient({
       <ProfileDrawer
         open={profileOpen}
         balance={balance}
+        quota={quota}
         profile={profile}
         account={account}
-        inviteUrl={inviteUrl}
         onClose={() => setProfileOpen(false)}
       />
     </div>

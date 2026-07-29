@@ -1,33 +1,38 @@
 import "server-only";
 
+import { zodTextFormat } from "openai/helpers/zod";
+import { z } from "zod";
 import type { ImageUploadRecord } from "@/lib/image-upload-store";
 import { buildAiCostMetadata, estimateOpenAiCostCents } from "@/lib/ai-cost";
 import { getOpenAIClient, getVisionOpenAIModel } from "@/lib/openai-client";
+import { toCustomerPalmImageIssue } from "@/lib/palm-image-public";
 import { createUsageLog } from "@/lib/usage-log-store";
 
-const palmSignals = [
-  {
-    line: "生命线",
-    reading: "整体线条更强调恢复力和节奏感，适合把精力管理放在第一位。",
-  },
-  {
-    line: "智慧线",
-    reading: "思考方式偏向先观察再判断，适合复杂问题拆成小步骤推进。",
-  },
-  {
-    line: "感情线",
-    reading: "关系里更需要稳定回应和清晰边界，不适合长期停留在猜测状态。",
-  },
-] as const;
+const palmVisionResultSchema = z.object({
+  imageKind: z.enum(["palm", "not_palm", "unclear"]),
+  imageAssessment: z.string().trim().min(1).max(500),
+  summary: z.string().trim().min(1).max(500),
+  signals: z.array(z.object({
+    line: z.string().trim().min(1).max(40),
+    reading: z.string().trim().min(1).max(500),
+  }).strict()).max(6),
+  actions: z.array(z.string().trim().min(1).max(300)).max(4),
+  disclaimer: z.string().trim().min(1).max(300),
+}).strict();
 
 type PalmAnalyzer = "openai_vision_v1" | "local_palm_fallback_v1";
+export type PalmImageStatus = "valid_palm" | "invalid_image" | "unverified";
+export type PalmSignal = { line: string; reading: string };
 
 export type PalmReading = {
   title: string;
   summary: string;
   content: string;
-  signals: typeof palmSignals;
+  signals: PalmSignal[];
   analyzer: PalmAnalyzer;
+  imageStatus: PalmImageStatus;
+  usable: boolean;
+  imageAssessment: string;
   provider: "openai" | "local";
   model: string;
   tokensIn?: number;
@@ -56,37 +61,30 @@ function isPublicImageUrl(url: string) {
   }
 }
 
-function firstLine(text: string) {
-  return text
-    .split("\n")
-    .map((line) => line.trim())
-    .find(Boolean);
-}
-
 export function buildPalmReading(input: {
   image: ImageUploadRecord;
   focus?: string;
   fallbackReason?: string;
 }): PalmReading {
   const focus = input.focus?.trim() || "当前整体状态";
-  const metadata = getImageMetadata(input.image);
-  const summary = `围绕「${focus}」，本次手相简析记录了图片 ${metadata.originalName ?? input.image.qiniuKey}，并生成三条主线方向。`;
+  const customerIssue = toCustomerPalmImageIssue("unverified");
+  const summary = customerIssue.message;
   const content = [
     summary,
-    ...palmSignals.map((signal) => `${signal.line}：${signal.reading}`),
-    "行动建议：先把最近最耗能的一件事写下来，再给它设置一个明确的边界或下一步动作。",
-    input.fallbackReason
-      ? `本次使用本地降级分析：${input.fallbackReason}。配置 OpenAI Key 且图片 URL 可公开访问后，会自动启用视觉模型分析。`
-      : "本次使用本地降级分析。配置 OpenAI Key 且图片 URL 可公开访问后，会自动启用视觉模型分析。",
-    "本报告仅供娱乐、文化参考和自我探索，不构成医疗、投资、法律或重大人生决策建议。",
+    `用户关注主题：${focus}。`,
+    customerIssue.imageAssessment,
+    "请稍后重试；不要把这次未验证结果当作正式手相报告，也不会据此解读生命线、智慧线或感情线。",
   ].join("\n\n");
 
   return {
-    title: "手相简析",
+    title: "手相图片待验证",
     summary,
     content,
-    signals: palmSignals,
+    signals: [],
     analyzer: "local_palm_fallback_v1",
+    imageStatus: "unverified",
+    usable: false,
+    imageAssessment: customerIssue.imageAssessment,
     provider: "local",
     model: "local-palm-reader",
     tokensIn: estimateTokens(`${focus}\n${input.image.qiniuKey}`),
@@ -101,15 +99,14 @@ function buildPalmVisionPrompt(input: { image: ImageUploadRecord; focus?: string
   const metadata = getImageMetadata(input.image);
 
   return [
-    "请分析这张手掌图片，生成中文手相简析报告。",
+    "先判断图片是否真的是清晰、完整、可分析的手掌照片；只有确认 imageKind=palm 后才生成中文手相简析。",
     `用户关注主题：${focus}`,
     `图片文件：${metadata.originalName ?? input.image.qiniuKey}`,
     "要求：",
-    "1. 先判断图片清晰度、角度、掌纹可见度，如果不足，要明确说明置信度限制。",
-    "2. 围绕生命线、智慧线、感情线给出观察，不要声称能做医学诊断或确定预测。",
-    "3. 给出 2-3 条可执行建议，语气温和、克制、专业。",
-    "4. 输出纯文本，不要 JSON，不要 Markdown 表格。",
-    "5. 结尾必须包含娱乐和自我探索用途免责声明。",
+    "1. 产品图、风景图、人物照、手背、局部过小、严重模糊或掌纹不可见时，必须标记 not_palm 或 unclear，不得编造掌纹。",
+    "2. imageKind 不是 palm 时，signals 必须为空，只说明如何重新拍摄。",
+    "3. imageKind=palm 时，围绕图片中真实可见的生命线、智慧线、感情线等给出克制观察，不做医学诊断或确定预测。",
+    "4. 给出 2-3 条可执行建议，并明确娱乐、文化参考和自我探索边界。",
   ].join("\n");
 }
 
@@ -117,7 +114,9 @@ export async function analyzePalmImage(input: {
   image: ImageUploadRecord;
   focus?: string;
   userId: string;
+  abortSignal?: AbortSignal;
 }): Promise<PalmReading> {
+  input.abortSignal?.throwIfAborted();
   const client = getOpenAIClient();
   const model = getVisionOpenAIModel();
   const focus = input.focus?.trim() || "当前整体状态";
@@ -182,10 +181,10 @@ export async function analyzePalmImage(input: {
 
   try {
     const prompt = buildPalmVisionPrompt(input);
-    const response = await client.responses.create({
+    const response = await client.responses.parse({
       model,
       instructions:
-        "你是玄机 AI 的手相图像分析顾问。必须基于用户上传图片可见内容作答，不能编造不可见掌纹细节。中文输出，语气温和、克制、专业。不得给医疗、投资、法律或重大人生决策的确定性建议。",
+        "你是玄机 AI 的手掌图片验证与分析顾问。第一职责是识别非手掌、手背、模糊或不可分析图片并拒绝编造；只有真实可见的掌纹才能进入解读。中文输出，语气温和、克制、专业。",
       input: [
         {
           role: "user",
@@ -202,21 +201,35 @@ export async function analyzePalmImage(input: {
           ],
         },
       ],
-      max_output_tokens: 900,
+      text: {
+        format: zodTextFormat(palmVisionResultSchema, "xuanji_palm_vision_result"),
+      },
+      max_output_tokens: 1200,
       prompt_cache_key: `xuanji:palm:${input.userId}`,
-    });
-    const output = response.output_text?.trim();
+    }, { signal: input.abortSignal });
+    input.abortSignal?.throwIfAborted();
+    const parsed = response.output_parsed;
 
-    if (!output) {
-      throw new Error("OpenAI vision response was empty.");
+    if (!parsed) {
+      throw new Error("OpenAI vision response did not contain a structured result.");
     }
 
-    const summary = firstLine(output) ?? `围绕「${focus}」，已完成手相图片视觉分析。`;
-    const content = [
-      summary,
-      output,
-      "本报告仅供娱乐、文化参考和自我探索，不构成医疗、投资、法律或重大人生决策建议。",
-    ].join("\n\n");
+    const usable = parsed.imageKind === "palm" && parsed.signals.length > 0;
+    const imageStatus: PalmImageStatus = usable ? "valid_palm" : "invalid_image";
+    const customerIssue = toCustomerPalmImageIssue("invalid_image");
+    const summary = usable ? parsed.summary : customerIssue.message;
+    const content = usable
+      ? [
+          parsed.imageAssessment,
+          parsed.summary,
+          ...parsed.signals.map((signal) => `${signal.line}：${signal.reading}`),
+          parsed.actions.length > 0 ? `行动建议：\n${parsed.actions.map((item) => `- ${item}`).join("\n")}` : "",
+          parsed.disclaimer,
+        ].filter(Boolean).join("\n\n")
+      : [
+          summary,
+          customerIssue.imageAssessment,
+        ].join("\n\n");
     const tokensIn = response.usage?.input_tokens;
     const tokensOut = response.usage?.output_tokens;
     const costEstimate = estimateOpenAiCostCents({ model, tokensIn, tokensOut });
@@ -233,17 +246,22 @@ export async function analyzePalmImage(input: {
         analyzer: "openai_vision_v1",
         imageId: input.image.id,
         imageUrlKind: "public_http",
+        imageStatus,
+        imageKind: parsed.imageKind,
         fallback: false,
         ...buildAiCostMetadata(costEstimate),
       },
     });
 
     return {
-      title: "手相视觉简析",
+      title: usable ? "手相视觉简析" : "手相图片不可用",
       summary,
       content,
-      signals: palmSignals,
+      signals: usable ? parsed.signals : [],
       analyzer: "openai_vision_v1",
+      imageStatus,
+      usable,
+      imageAssessment: usable ? parsed.imageAssessment : customerIssue.imageAssessment,
       provider: "openai",
       model,
       tokensIn,
@@ -252,6 +270,7 @@ export async function analyzePalmImage(input: {
       usageLogId: usageLog.id,
     };
   } catch (error) {
+    if (input.abortSignal?.aborted) throw error;
     const fallbackReason =
       error instanceof Error ? error.message.split("\n")[0] : "视觉模型调用失败";
 

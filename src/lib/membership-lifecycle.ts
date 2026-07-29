@@ -8,7 +8,8 @@ import {
 import type { Prisma } from "@/generated/prisma/client";
 import {
   getProduct,
-  membershipProducts,
+  freeChatQuota,
+  freeProfileLimit,
   membershipTierByProduct,
   type MembershipTierCode,
   type ProductCode,
@@ -17,7 +18,7 @@ import { tryPrisma, type PrismaClientInstance } from "@/lib/prisma";
 
 const lifecycleFeature = "membership_lifecycle";
 const dayMs = 24 * 60 * 60 * 1000;
-const membershipProductCodes = membershipProducts.map((product) => product.code);
+const allMembershipProductCodes = Object.keys(membershipTierByProduct) as ProductCode[];
 
 type MembershipDb = PrismaClientInstance | Prisma.TransactionClient;
 
@@ -42,6 +43,10 @@ export class MembershipDowngradeError extends Error {
 
 function addDays(value: Date, days: number) {
   return new Date(value.getTime() + days * dayMs);
+}
+
+function startOfUtcMonth(value: Date) {
+  return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), 1));
 }
 
 function laterDate(a: Date, b: Date) {
@@ -74,6 +79,8 @@ function getMembershipTerms(productCode: string) {
     productName: product.name,
     tier,
     durationDays: product.durationDays,
+    chatQuota: product.chatQuota ?? product.starGrant ?? freeChatQuota,
+    profileLimit: product.profileLimit ?? freeProfileLimit,
   };
 }
 
@@ -208,6 +215,32 @@ async function expireMembershipIfNeededInDb(
   return null;
 }
 
+async function resetFreeQuotaIfNeededInDb(
+  db: MembershipDb,
+  active: NonNullable<Awaited<ReturnType<typeof getActiveMembership>>>,
+  now: Date,
+) {
+  if (active.tier !== MembershipTier.FREE) {
+    return active;
+  }
+
+  const periodStart = startOfUtcMonth(now);
+
+  if (active.quotaPeriodStart.getTime() >= periodStart.getTime()) {
+    return active;
+  }
+
+  return db.membership.update({
+    where: { id: active.id },
+    data: {
+      chatQuota: freeChatQuota,
+      chatUsed: 0,
+      profileLimit: freeProfileLimit,
+      quotaPeriodStart: periodStart,
+    },
+  });
+}
+
 export async function expireMembershipIfNeeded(
   db: MembershipDb,
   userId: string,
@@ -294,6 +327,10 @@ export async function activateMembershipForOrder(
           startsAt,
           endsAt,
           starBalance: input.starBalance,
+          chatQuota: terms.chatQuota,
+          chatUsed: 0,
+          profileLimit: terms.profileLimit,
+          quotaPeriodStart: input.paidAt,
           isActive: true,
         },
       })
@@ -304,6 +341,10 @@ export async function activateMembershipForOrder(
           startsAt,
           endsAt,
           starBalance: input.starBalance,
+          chatQuota: terms.chatQuota,
+          chatUsed: 0,
+          profileLimit: terms.profileLimit,
+          quotaPeriodStart: input.paidAt,
           isActive: true,
         },
       });
@@ -341,6 +382,10 @@ export async function updateMembershipStarBalance(
       userId: input.userId,
       tier: MembershipTier.FREE,
       starBalance: input.starBalance,
+      chatQuota: freeChatQuota,
+      chatUsed: 0,
+      profileLimit: freeProfileLimit,
+      quotaPeriodStart: startOfUtcMonth(new Date()),
       isActive: true,
     },
   });
@@ -360,7 +405,7 @@ export async function reconcileMembershipAfterOrderChange(
     where: {
       userId: input.userId,
       status: OrderStatus.PAID,
-      productCode: { in: membershipProductCodes },
+      productCode: { in: allMembershipProductCodes },
       paidAt: { not: null },
     },
     orderBy: [{ paidAt: "asc" }, { createdAt: "asc" }],
@@ -369,6 +414,8 @@ export async function reconcileMembershipAfterOrderChange(
     startsAt: Date;
     endsAt: Date;
     tier: MembershipTierCode;
+    chatQuota: number;
+    profileLimit: number;
   } | null = null;
 
   for (const order of orders) {
@@ -384,6 +431,8 @@ export async function reconcileMembershipAfterOrderChange(
         startsAt: paidAt,
         endsAt: addDays(paidAt, terms.durationDays),
         tier: terms.tier,
+        chatQuota: terms.chatQuota,
+        profileLimit: terms.profileLimit,
       };
       continue;
     }
@@ -392,6 +441,8 @@ export async function reconcileMembershipAfterOrderChange(
 
     if (compareMembershipTiers(terms.tier, period.tier) > 0) {
       period.tier = terms.tier;
+      period.chatQuota = terms.chatQuota;
+      period.profileLimit = terms.profileLimit;
     }
   }
 
@@ -427,6 +478,10 @@ export async function reconcileMembershipAfterOrderChange(
           startsAt: period.startsAt,
           endsAt: period.endsAt,
           starBalance: input.starBalance,
+          chatQuota: period.chatQuota,
+          chatUsed: Math.min(active.chatUsed, period.chatQuota),
+          profileLimit: period.profileLimit,
+          quotaPeriodStart: active.quotaPeriodStart,
           isActive: true,
         },
       })
@@ -437,6 +492,10 @@ export async function reconcileMembershipAfterOrderChange(
           startsAt: period.startsAt,
           endsAt: period.endsAt,
           starBalance: input.starBalance,
+          chatQuota: period.chatQuota,
+          chatUsed: 0,
+          profileLimit: period.profileLimit,
+          quotaPeriodStart: period.startsAt,
           isActive: true,
         },
       });
@@ -477,7 +536,8 @@ export async function ensureMembershipStateCurrent(
     return reconciled.membership;
   }
 
-  return expireMembershipIfNeeded(db, userId, now);
+  const current = await expireMembershipIfNeeded(db, userId, now);
+  return current ? resetFreeQuotaIfNeededInDb(db, current, now) : current;
 }
 
 export async function getMembershipLifecycleSnapshot(userId: string) {
@@ -492,7 +552,7 @@ export async function getMembershipLifecycleSnapshot(userId: string) {
         where: {
           userId,
           status: OrderStatus.PAID,
-          productCode: { in: membershipProductCodes },
+          productCode: { in: allMembershipProductCodes },
         },
       }),
       prisma.usageLog.findMany({
@@ -518,6 +578,11 @@ export async function getMembershipLifecycleSnapshot(userId: string) {
           : ("FREE" as const),
       startsAt: active?.startsAt.toISOString() ?? null,
       endsAt: endsAt?.toISOString() ?? null,
+      chatQuota: active?.chatQuota ?? freeChatQuota,
+      chatUsed: active?.chatUsed ?? 0,
+      chatRemaining: Math.max(0, (active?.chatQuota ?? freeChatQuota) - (active?.chatUsed ?? 0)),
+      profileLimit: active?.profileLimit ?? freeProfileLimit,
+      quotaPeriodStart: active?.quotaPeriodStart?.toISOString() ?? startOfUtcMonth(new Date()).toISOString(),
       daysRemaining,
       autoRenew: false,
       renewalCount: Math.max(0, paidOrderCount - 1),
@@ -543,7 +608,7 @@ export async function reconcileExpiredMemberships(input: { take?: number } = {})
     const closedOrders = await prisma.order.updateMany({
       where: {
         status: OrderStatus.PENDING,
-        productCode: { in: membershipProductCodes },
+          productCode: { in: allMembershipProductCodes },
         createdAt: { lte: staleOrderCutoff },
       },
       data: { status: OrderStatus.CLOSED },

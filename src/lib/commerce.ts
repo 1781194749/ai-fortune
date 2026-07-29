@@ -6,6 +6,7 @@ export type ProductCode =
   | "trial_7d"
   | "monthly"
   | "pro_monthly"
+  | "premium_monthly"
   | "yearly"
   | "tarot_love"
   | "palm_brief"
@@ -32,9 +33,12 @@ export type Product = {
   currency: Currency;
   starGrant?: number;
   durationDays?: number;
+  chatQuota?: number;
+  profileLimit?: number;
   reportQuota?: number;
   palmQuota?: number;
   highlighted?: boolean;
+  purchasable?: boolean;
   description: string;
 };
 
@@ -44,6 +48,8 @@ export type ProductRuntimeOverride = {
   priceCents?: number;
   starGrant?: number;
   durationDays?: number;
+  chatQuota?: number;
+  profileLimit?: number;
   reportQuota?: number;
   palmQuota?: number;
   highlighted?: boolean;
@@ -52,7 +58,9 @@ export type ProductRuntimeOverride = {
 
 export type MembershipTierCode = "FREE" | "TRIAL" | "MONTHLY" | "PRO" | "YEARLY";
 
-export const freeStarterStarGrant = 8;
+export const freeStarterStarGrant = 10;
+export const freeChatQuota = 10;
+export const freeProfileLimit = 3;
 
 declare global {
   var xuanjiProductRuntimeConfigs: Map<string, ProductRuntimeOverride> | undefined;
@@ -60,54 +68,80 @@ declare global {
 
 export const membershipProducts = [
   {
-    code: "trial_7d",
-    type: "membership",
-    name: "体验卡",
-    priceCents: 990,
-    currency: "CNY",
-    starGrant: 80,
-    durationDays: 7,
-    reportQuota: 1,
-    palmQuota: 1,
-    description: "适合先用 7 天完整体验建档、轻问答、塔罗和手相浅析。",
-  },
-  {
     code: "monthly",
     type: "membership",
-    name: "月度会员",
-    priceCents: 2900,
+    name: "轻享月卡",
+    priceCents: 1990,
     currency: "CNY",
-    starGrant: 350,
+    starGrant: 20,
     durationDays: 30,
-    reportQuota: 2,
-    palmQuota: 3,
-    highlighted: true,
-    description: "适合一个月持续问事、手相复核、简版报告和基础档案记忆。",
+    chatQuota: 30,
+    profileLimit: 10,
+    reportQuota: 1,
+    palmQuota: 1,
+    description: "适合轻度持续咨询：本月问题不断线，常用档案和历史上下文都能接着用。",
   },
   {
     code: "pro_monthly",
     type: "membership",
-    name: "进阶会员",
-    priceCents: 6900,
+    name: "进阶月卡",
+    priceCents: 6990,
     currency: "CNY",
-    starGrant: 1200,
+    starGrant: 100,
     durationDays: 30,
-    reportQuota: 6,
-    palmQuota: 10,
-    description: "适合高频追问、长期记忆、深度报告和多次手相分析。",
+    chatQuota: 100,
+    profileLimit: 30,
+    reportQuota: 4,
+    palmQuota: 6,
+    description: "适合高频问事与复盘：更多档案、更深报告和多次手相分析组合使用。",
+  },
+  {
+    code: "premium_monthly",
+    type: "membership",
+    name: "尊享月卡",
+    priceCents: 9900,
+    currency: "CNY",
+    starGrant: 200,
+    durationDays: 30,
+    chatQuota: 200,
+    profileLimit: 100,
+    reportQuota: 8,
+    palmQuota: 12,
+    highlighted: true,
+    description: "适合把一个关键阶段真正跟到底：200 次问答、阶段陪伴、月度总结与最高权益额度。",
+  },
+] satisfies Product[];
+
+const legacyMembershipProducts = [
+  {
+    code: "trial_7d",
+    type: "membership",
+    name: "历史体验卡",
+    priceCents: 990,
+    currency: "CNY",
+    starGrant: 80,
+    durationDays: 7,
+    chatQuota: 30,
+    profileLimit: 10,
+    reportQuota: 1,
+    palmQuota: 1,
+    purchasable: false,
+    description: "仅用于兼容历史订单，不再开放新购。",
   },
   {
     code: "yearly",
     type: "membership",
-    name: "年度会员",
+    name: "历史兼容会员",
     priceCents: 39900,
     currency: "CNY",
     starGrant: 5400,
     durationDays: 365,
+    chatQuota: 200,
+    profileLimit: 100,
     reportQuota: 12,
     palmQuota: 36,
-    highlighted: false,
-    description: "适合全年档案沉淀、年度运势、主题报告和长期陪伴。",
+    purchasable: false,
+    description: "仅用于兼容旧订单，不再开放新购。",
   },
 ] satisfies Product[];
 
@@ -155,6 +189,7 @@ export const oneTimeProducts = [
 ] satisfies Product[];
 
 export const productCatalog: Product[] = [
+  ...legacyMembershipProducts,
   ...membershipProducts,
   ...oneTimeProducts,
 ];
@@ -175,6 +210,7 @@ export const membershipTierByProduct: Partial<Record<ProductCode, MembershipTier
   trial_7d: "TRIAL",
   monthly: "MONTHLY",
   pro_monthly: "PRO",
+  premium_monthly: "YEARLY",
   yearly: "YEARLY",
 };
 

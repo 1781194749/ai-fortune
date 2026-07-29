@@ -112,7 +112,7 @@ export default async function MockCheckoutPage({
             <div className="pt-2">
               {displayOrder.status === "PAID" ? (
                 <Link
-                  href={isDeepReportOrder ? `/reports/deep?orderId=${displayOrder.id}` : "/member"}
+                  href={isDeepReportOrder ? `/reports/deep?orderId=${displayOrder.id}` : "/member/entitlements"}
                   className="inline-flex h-12 w-full items-center justify-center rounded-full bg-[#c9a35f] px-5 font-semibold text-[#17130d] transition hover:bg-[#efd9a6]"
                 >
                   {isDeepReportOrder ? "开始生成深度报告" : "查看已到账权益"}

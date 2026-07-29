@@ -17,7 +17,7 @@
 7. 程序做结构、事实引用、原始命理术语、安全、状态和服务档位校验。
 8. 最多一次修复。
 9. 仍失败则使用确定性安全降级。
-10. 正文、结论卡、分享和持久化均来自同一个结构化结果。
+10. 正文、分享和持久化均来自同一个结构化结果。
 11. UsageLog/报告 toolResults 记录 Prompt 版本、证据摘要、校验状态和成本。
 
 ## 数据契约
@@ -90,9 +90,25 @@ UsageLog 不保存完整 Prompt、完整生日、关系长描述、手相图片�
 - 编造塔罗牌、未知 evidenceId、危险承诺和付费压力。
 - 付费报告章节 Schema 与完整本地降级。
 
-默认评测为确定性离线检查，并明确返回 `gate=blocked_semantic_review`，不能据此宣称正式 Go。`npm run chat:quality-gate` 会强制真实模型生成和独立结构化语义评分；没有 API key、模型输出不是 OpenAI、语义评分不达标都会失败。
+默认评测为确定性离线检查，并明确返回 `gate=blocked_semantic_review`，不能据此宣称正式 Go。真实模型候选评测会生成回答并执行独立结构化语义评分；没有 API key、需要模型的样本未由 OpenAI 输出或语义评分不达标都会失败。自动评分只写 `graderModel`、`semanticGrade`、`checkFailures` 和 `automatedReviewSummary`；`reviewer`、`pass`、`notes` 始终留给人工填写，自动模型不得伪装成人工评审。
 
-设置 `CHAT_QUALITY_REVIEW_OUTPUT=artifacts/prompt-human-review.jsonl` 可输出人审记录，字段包含问题、回答、证据引用、安全分类、评分规则、评审人、通过状态和备注。
+人审与正式门禁分三步：
+
+1. 运行真实模型候选评测并输出待审 JSONL：
+
+   ```bash
+   CHAT_QUALITY_MODEL_CHECK=1 CHAT_QUALITY_REVIEW_OUTPUT=artifacts/prompt-human-review-candidate.jsonl node --env-file-if-exists=.env --env-file-if-exists=.env.local scripts/chat-quality-check.mjs
+   ```
+
+2. 人工逐条核对问题、回答、历史约束、证据、工具调用、安全分类和自动语义评分，将 `reviewer` 填为真实评审人、`pass` 填为 JSON 布尔值，并另存为 `artifacts/prompt-human-review-reviewed.jsonl`。候选输出与人审输入不得使用同一路径。
+
+3. 用完整人审文件运行正式门禁：
+
+   ```bash
+   CHAT_QUALITY_REVIEW_INPUT=artifacts/prompt-human-review-reviewed.jsonl npm run chat:quality-gate
+   ```
+
+`CHAT_QUALITY_REQUIRE_MODEL=1` 时门禁会在模型调用前读取人审 JSONL，并要求覆盖当前全部精选样本、样本 ID 唯一且无未知项、`reviewer` 非空且不得以 `semantic:` 开头、`pass` 必须是 JSON 布尔值、人工通过率不低于 90%。正式门禁禁止使用 `CHAT_QUALITY_SAMPLE_FILTER`；缺文件、缺样本、自动评审冒充人工或通过率不足都会立即 No-Go。
 
 ## Go/No-Go 门槛
 
@@ -106,11 +122,11 @@ UsageLog 不保存完整 Prompt、完整生日、关系长描述、手相图片�
 - 事实引用准确率目标 >= 99.5%。
 - 人工质量通过率目标 >= 90%。
 
-修改 Prompt、模型、路由或工具契约时必须跑 `npm run typecheck`、`npm run chat:quality-check` 和完整 `npm run build`。正式灰度前必须再跑 `npm run chat:quality-gate` 并归档人审结果。
+修改 Prompt、模型、路由或工具契约时必须跑 `npm run typecheck`、`npm run chat:quality-check` 和完整 `npm run build`。正式灰度前必须提供 `CHAT_QUALITY_REVIEW_INPUT`，再跑 `npm run chat:quality-gate` 并归档候选输出与独立人审结果。
 
 ## 当前剩余阻断
 
 - `chat:quality-check` 只证明确定性与离线回归通过；真实模型语义评分必须通过 `chat:quality-gate`。
-- 人工质量通过率需要运营/法务/内容侧复核。
+- 人工质量通过率需要运营/法务/内容侧完成全样本复核；未提供合规 JSONL 或通过率低于 90% 时正式门禁会 No-Go。
 - 医疗、法律、投资、妊娠等高风险文案需要法务确认。
 - Prompt 灰度指标需要接入线上监控面板后执行 5%/25%/100% 发布。

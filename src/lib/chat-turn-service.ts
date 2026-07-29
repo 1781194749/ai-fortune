@@ -9,7 +9,7 @@ import {
   WalletEventType,
 } from "@/generated/prisma/enums";
 import type { AiChatResultDraft } from "@/lib/ai-orchestrator";
-import type { ChatCompleteData } from "@/lib/chat-ui-message";
+import type { ChatInternalCompleteData } from "@/lib/chat-ui-message";
 import type { ChatConversationMessage } from "@/lib/ai-session-store";
 import type { ChatReadingMethod, ChatServiceMode } from "@/lib/chat-service";
 import { getPrismaClient } from "@/lib/prisma";
@@ -29,6 +29,7 @@ export type ChatTurnErrorCode =
   | "CHAT_SESSION_NOT_FOUND"
   | "SESSION_BUSY"
   | "INSUFFICIENT_STARS"
+  | "CHAT_QUOTA_EXCEEDED"
   | "IDEMPOTENCY_MISMATCH"
   | "TURN_IN_PROGRESS"
   | "TURN_ALREADY_FAILED"
@@ -41,6 +42,11 @@ export class ChatTurnError extends Error {
     readonly status: number,
     message: string,
     readonly balance?: number,
+    readonly quota?: {
+      quotaTotal: number;
+      quotaUsed: number;
+      quotaRemaining: number;
+    },
   ) {
     super(message);
     this.name = "ChatTurnError";
@@ -54,12 +60,15 @@ export type ReservedChatTurn = {
   sequence: number;
   createdSession: boolean;
   balanceAfter: number;
+  quotaTotal: number;
+  quotaUsed: number;
+  quotaRemaining: number;
   history: ChatConversationMessage[];
 };
 
 export type ReplayedChatTurn = {
   kind: "replay";
-  data: ChatCompleteData;
+  data: ChatInternalCompleteData;
 };
 
 const completedStatuses = new Set<AiTurnStatus>([
@@ -111,6 +120,13 @@ function getStaleTurnThresholdMs() {
     : 10 * 60_000;
 }
 
+function getDeliveryCheckpointStaleMs() {
+  const configured = Number(process.env.CHAT_DELIVERY_CHECKPOINT_STALE_MS);
+  return Number.isFinite(configured) && configured >= 5_000
+    ? configured
+    : 45_000;
+}
+
 function isRetryableTransactionError(error: unknown) {
   if (!isRecord(error)) {
     return false;
@@ -129,7 +145,7 @@ async function runSerializable<T>(operation: (tx: TransactionClient) => Promise<
       process.env.DATABASE_URL ? "CHAT_DATABASE_UNAVAILABLE" : "CHAT_DATABASE_REQUIRED",
       503,
       process.env.DATABASE_URL
-        ? "对话数据库暂时不可用，本次没有扣除星力。"
+        ? "对话数据库暂时不可用，本次没有扣除问答次数。"
         : "AI 对话需要配置 PostgreSQL 数据库。",
     );
   }
@@ -151,7 +167,7 @@ async function runSerializable<T>(operation: (tx: TransactionClient) => Promise<
   throw new ChatTurnError(
     "CHAT_DATABASE_UNAVAILABLE",
     503,
-    "对话请求发生并发冲突，请重新发送，本次没有重复扣费。",
+    "对话请求发生并发冲突，请重新发送，本次没有重复计次。",
   );
 }
 
@@ -182,24 +198,47 @@ function normalizeHistoryMessage(message: {
 }
 
 async function readConversationHistory(tx: TransactionClient, sessionId: string) {
-  const messages = await tx.message.findMany({
-    where: {
-      sessionId,
-      OR: [
-        { turnId: null },
-        { turn: { status: { in: [...completedStatuses] } } },
-      ],
-    },
+  const visibleWhere = {
+    sessionId,
+    OR: [
+      { turnId: null },
+      {
+        turn: {
+          status: { in: [...completedStatuses] },
+          completedAt: { not: null },
+        },
+      },
+    ],
+  };
+  const firstUserMessage = await tx.message.findFirst({
+    where: { ...visibleWhere, role: MessageRole.USER },
+    orderBy: [
+      { createdAt: "asc" },
+      { ordinal: "asc" },
+      { id: "asc" },
+    ],
+  });
+  const recentMessages = await tx.message.findMany({
+    where: visibleWhere,
     orderBy: [
       { createdAt: "desc" },
       { ordinal: "desc" },
       { id: "desc" },
     ],
-    take: 16,
+    take: 63,
   });
+  const messages = firstUserMessage &&
+    !recentMessages.some((message) => message.id === firstUserMessage.id)
+    ? [...recentMessages, firstUserMessage]
+    : recentMessages;
 
   return messages
-    .reverse()
+    .toSorted((first, second) =>
+      first.createdAt.getTime() - second.createdAt.getTime() ||
+      (first.ordinal ?? Number.MAX_SAFE_INTEGER) -
+        (second.ordinal ?? Number.MAX_SAFE_INTEGER) ||
+      first.id.localeCompare(second.id)
+    )
     .map(normalizeHistoryMessage)
     .filter((message): message is ChatConversationMessage => Boolean(message));
 }
@@ -209,7 +248,15 @@ function parseStoredResult(value: unknown) {
     return null;
   }
 
-  return value as unknown as ChatCompleteData;
+  return value as unknown as ChatInternalCompleteData;
+}
+
+function quotaSnapshot(input: { chatQuota: number; chatUsed: number }) {
+  return {
+    quotaTotal: input.chatQuota,
+    quotaUsed: input.chatUsed,
+    quotaRemaining: Math.max(0, input.chatQuota - input.chatUsed),
+  };
 }
 
 async function refundTurnInTransaction(input: {
@@ -220,14 +267,18 @@ async function refundTurnInTransaction(input: {
     userId: string;
     costStars: number;
     refundedStars: number;
+    quotaUnits: number;
+    refundedQuotaUnits: number;
   };
-  fallback: Pick<SessionPayload, "tier" | "starBalance">;
+  fallback?: Pick<SessionPayload, "tier" | "starBalance">;
   status: typeof AiTurnStatus.FAILED | typeof AiTurnStatus.CANCELLED;
   errorCode: string;
+  failureDetails?: string[];
 }) {
   const { tx, turn } = input;
   const accountState = await getDbAccountState(tx, turn.userId, input.fallback);
   const refundAmount = Math.max(0, turn.costStars - turn.refundedStars);
+  const refundQuota = Math.max(0, turn.quotaUnits - turn.refundedQuotaUnits);
   let balanceAfter = accountState.starBalance;
 
   if (refundAmount > 0) {
@@ -257,12 +308,37 @@ async function refundTurnInTransaction(input: {
     });
   }
 
+  if (refundQuota > 0) {
+    const quotaRefund = await tx.membership.updateMany({
+      where: {
+        userId: turn.userId,
+        isActive: true,
+        chatUsed: { gte: refundQuota },
+      },
+      data: { chatUsed: { decrement: refundQuota } },
+    });
+    if (quotaRefund.count !== 1) {
+      throw new Error(`Chat quota refund failed for turn ${turn.id}.`);
+    }
+  }
+
+  const nextQuotaUsed = Math.max(0, accountState.chatUsed - refundQuota);
   await tx.aiTurn.update({
     where: { id: turn.id },
     data: {
       status: input.status,
       refundedStars: turn.costStars,
+      refundedQuotaUnits: turn.quotaUnits,
       errorCode: input.errorCode,
+      ...(input.failureDetails?.length
+        ? {
+            result: toJsonValue({
+              ok: false,
+              errorCode: input.errorCode,
+              failureDetails: input.failureDetails.slice(0, 8),
+            }),
+          }
+        : {}),
       completedAt: new Date(),
     },
   });
@@ -271,13 +347,194 @@ async function refundTurnInTransaction(input: {
     data: { activeTurnId: null },
   });
 
-  return balanceAfter;
+  return {
+    balanceAfter,
+    ...quotaSnapshot({ chatQuota: accountState.chatQuota, chatUsed: nextQuotaUsed }),
+  };
+}
+
+async function confirmDeliveryCheckpointInTransaction(input: {
+  tx: TransactionClient;
+  turn: { id: string; sessionId: string; usageLogId: string | null };
+  checkpoint: ChatInternalCompleteData;
+  answer?: string;
+  status?: typeof AiTurnStatus.COMPLETED | typeof AiTurnStatus.PARTIAL;
+}) {
+  const assistantMessage = await input.tx.message.findFirst({
+    where: {
+      turnId: input.turn.id,
+      ordinal: 1,
+      role: MessageRole.ASSISTANT,
+    },
+    select: { id: true, toolResult: true },
+  });
+
+  if (!assistantMessage) {
+    return null;
+  }
+
+  const status = input.status ?? input.checkpoint.intendedTurnStatus ?? input.checkpoint.turnStatus;
+  const complete = {
+    ...input.checkpoint,
+    answer: input.answer ?? input.checkpoint.answer,
+    turnStatus: status,
+    intendedTurnStatus: status,
+    deliveryState: "FINALIZED" as const,
+  } satisfies ChatInternalCompleteData;
+  const toolResult = isRecord(assistantMessage.toolResult)
+    ? {
+        ...assistantMessage.toolResult,
+        turnStatus: status,
+        deliveryState: "FINALIZED",
+      }
+    : { turnStatus: status, deliveryState: "FINALIZED" };
+
+  const finalized = await input.tx.aiTurn.updateMany({
+    where: {
+      id: input.turn.id,
+      status: AiTurnStatus.PARTIAL,
+      completedAt: null,
+    },
+    data: {
+      status,
+      errorCode: null,
+      result: toJsonValue(complete),
+      completedAt: new Date(),
+    },
+  });
+
+  if (finalized.count !== 1) {
+    return null;
+  }
+
+  await input.tx.message.update({
+    where: { id: assistantMessage.id },
+    data: {
+      content: complete.answer,
+      toolResult: toJsonValue(toolResult),
+    },
+  });
+
+  if (input.turn.usageLogId) {
+    const usageLog = await input.tx.usageLog.findUnique({
+      where: { id: input.turn.usageLogId },
+      select: { metadata: true },
+    });
+    const metadata = isRecord(usageLog?.metadata) ? usageLog.metadata : {};
+
+    if (usageLog) {
+      await input.tx.usageLog.update({
+        where: { id: input.turn.usageLogId },
+        data: {
+          metadata: toJsonValue({
+            ...metadata,
+            turnStatus: status,
+            deliveryCheckpoint: false,
+            deliveryState: "FINALIZED",
+          }),
+        },
+      });
+    }
+  }
+
+  await input.tx.aiSession.updateMany({
+    where: { id: input.turn.sessionId, activeTurnId: input.turn.id },
+    data: { activeTurnId: null },
+  });
+
+  return complete;
+}
+
+type SettleableChatTurn = {
+  id: string;
+  sessionId: string;
+  userId: string;
+  status: AiTurnStatus;
+  costStars: number;
+  refundedStars: number;
+  quotaUnits: number;
+  refundedQuotaUnits: number;
+  usageLogId: string | null;
+  result: unknown;
+};
+
+async function settleSelectedChatTurnsInTransaction(input: {
+  tx: TransactionClient;
+  turns: SettleableChatTurn[];
+  fallback?: Pick<SessionPayload, "tier" | "starBalance">;
+}) {
+  let recovered = 0;
+  let refunded = 0;
+
+  for (const turn of input.turns) {
+    const checkpoint = turn.status === AiTurnStatus.PARTIAL
+      ? parseStoredResult(turn.result)
+      : null;
+
+    if (checkpoint) {
+      const confirmed = await confirmDeliveryCheckpointInTransaction({
+        tx: input.tx,
+        turn,
+        checkpoint,
+      });
+
+      if (confirmed) {
+        recovered += 1;
+        continue;
+      }
+    }
+
+    await refundTurnInTransaction({
+      tx: input.tx,
+      turn,
+      fallback: input.fallback,
+      status: AiTurnStatus.FAILED,
+      errorCode: turn.status === AiTurnStatus.PARTIAL
+        ? "INVALID_DELIVERY_CHECKPOINT"
+        : "STALE_GENERATING_TURN",
+    });
+    refunded += 1;
+  }
+
+  return { checked: input.turns.length, recovered, refunded };
+}
+
+async function settleStaleUserTurns(input: {
+  tx: TransactionClient;
+  userId: string;
+  fallback: Pick<SessionPayload, "tier" | "starBalance">;
+}) {
+  const now = Date.now();
+  const turns = await input.tx.aiTurn.findMany({
+    where: {
+      userId: input.userId,
+      OR: [
+        {
+          status: AiTurnStatus.GENERATING,
+          startedAt: { lt: new Date(now - getStaleTurnThresholdMs()) },
+        },
+        {
+          status: AiTurnStatus.PARTIAL,
+          completedAt: null,
+          updatedAt: { lt: new Date(now - getDeliveryCheckpointStaleMs()) },
+        },
+      ],
+    },
+    orderBy: { updatedAt: "asc" },
+    take: 8,
+  });
+
+  await settleSelectedChatTurnsInTransaction({
+    tx: input.tx,
+    turns,
+    fallback: input.fallback,
+  });
 }
 
 export async function waiveChatTurnCharge(input: {
   userId: string;
   turnId: string;
-  reasonCode: "IDENTITY_BOUNDARY" | "MISSING_INPUT" | "SAFETY_BOUNDARY";
+  reasonCode: "IDENTITY_BOUNDARY" | "MISSING_INPUT" | "SAFETY_BOUNDARY" | "PROVIDER_FALLBACK";
 }) {
   return runSerializable(async (tx) => {
     const turn = await tx.aiTurn.findFirst({
@@ -290,13 +547,18 @@ export async function waiveChatTurnCharge(input: {
 
     const accountState = await getDbAccountState(tx, input.userId);
     const refundAmount = Math.max(0, turn.costStars - turn.refundedStars);
+    const refundQuota = Math.max(0, turn.quotaUnits - turn.refundedQuotaUnits);
 
-    if (refundAmount <= 0) {
-      return accountState.starBalance;
+    if (refundAmount <= 0 && refundQuota <= 0) {
+      return {
+        balanceAfter: accountState.starBalance,
+        ...quotaSnapshot(accountState),
+      };
     }
 
     const balanceAfter = accountState.starBalance + refundAmount;
-    await tx.walletTransaction.upsert({
+    if (refundAmount > 0) {
+      await tx.walletTransaction.upsert({
       where: { id: `chat_refund_${turn.id}` },
       update: {},
       create: {
@@ -313,18 +575,34 @@ export async function waiveChatTurnCharge(input: {
           reasonCode: input.reasonCode,
         },
       },
-    });
-    await upsertDbMembership(tx, {
-      userId: turn.userId,
-      tier: accountState.tier,
-      starBalance: balanceAfter,
-    });
+      });
+      await upsertDbMembership(tx, {
+        userId: turn.userId,
+        tier: accountState.tier,
+        starBalance: balanceAfter,
+      });
+    }
+    if (refundQuota > 0) {
+      const quotaRefund = await tx.membership.updateMany({
+        where: { userId: turn.userId, isActive: true, chatUsed: { gte: refundQuota } },
+        data: { chatUsed: { decrement: refundQuota } },
+      });
+      if (quotaRefund.count !== 1) {
+        throw new Error(`Chat quota waiver refund failed for turn ${turn.id}.`);
+      }
+    }
     await tx.aiTurn.update({
       where: { id: turn.id },
-      data: { refundedStars: turn.costStars },
+      data: {
+        refundedStars: turn.costStars,
+        refundedQuotaUnits: turn.quotaUnits,
+      },
     });
 
-    return balanceAfter;
+    return {
+      balanceAfter,
+      ...quotaSnapshot({ chatQuota: accountState.chatQuota, chatUsed: Math.max(0, accountState.chatUsed - refundQuota) }),
+    };
   });
 }
 
@@ -341,7 +619,46 @@ async function ensureSessionAvailable(input: {
     where: { id: input.session.activeTurnId },
   });
 
-  if (!activeTurn || terminalStatuses.has(activeTurn.status)) {
+  if (!activeTurn) {
+    await input.tx.aiSession.updateMany({
+      where: { id: input.session.id, activeTurnId: input.session.activeTurnId },
+      data: { activeTurnId: null },
+    });
+    return;
+  }
+
+  const checkpoint = activeTurn.status === AiTurnStatus.PARTIAL && !activeTurn.completedAt
+    ? parseStoredResult(activeTurn.result)
+    : null;
+
+  if (checkpoint) {
+    if (Date.now() - activeTurn.updatedAt.getTime() < getDeliveryCheckpointStaleMs()) {
+      throw new ChatTurnError("SESSION_BUSY", 409, "该对话正在交付回答，请等待完成后再发送。");
+    }
+
+    const confirmed = await confirmDeliveryCheckpointInTransaction({
+      tx: input.tx,
+      turn: activeTurn,
+      checkpoint,
+    });
+
+    if (confirmed) {
+      return;
+    }
+  }
+
+  if (activeTurn.status === AiTurnStatus.PARTIAL && !activeTurn.completedAt) {
+    await refundTurnInTransaction({
+      tx: input.tx,
+      turn: activeTurn,
+      fallback: input.fallback,
+      status: AiTurnStatus.FAILED,
+      errorCode: "INVALID_DELIVERY_CHECKPOINT",
+    });
+    return;
+  }
+
+  if (terminalStatuses.has(activeTurn.status)) {
     await input.tx.aiSession.updateMany({
       where: { id: input.session.id, activeTurnId: input.session.activeTurnId },
       data: { activeTurnId: null },
@@ -376,6 +693,11 @@ export async function reserveChatTurn(input: {
 
   return runSerializable(async (tx) => {
     await ensureDbUser(tx, { userId: input.session.userId });
+    await settleStaleUserTurns({
+      tx,
+      userId: input.session.userId,
+      fallback: input.session,
+    });
 
     const existingTurn = await tx.aiTurn.findUnique({
       where: {
@@ -399,7 +721,11 @@ export async function reserveChatTurn(input: {
         throw new ChatTurnError("TURN_IN_PROGRESS", 409, "这次请求仍在生成中，请稍候。");
       }
 
-      if (completedStatuses.has(existingTurn.status)) {
+      if (existingTurn.status === AiTurnStatus.PARTIAL && !existingTurn.completedAt) {
+        throw new ChatTurnError("TURN_IN_PROGRESS", 409, "这次回答仍在交付中，请稍候。");
+      }
+
+      if (completedStatuses.has(existingTurn.status) && existingTurn.completedAt) {
         const stored = parseStoredResult(existingTurn.result);
 
         if (!stored) {
@@ -416,6 +742,7 @@ export async function reserveChatTurn(input: {
           data: {
             ...stored,
             balanceAfter: accountState.starBalance,
+            ...quotaSnapshot(accountState),
             replayed: true,
           },
         };
@@ -427,6 +754,7 @@ export async function reserveChatTurn(input: {
         409,
         "这次请求已经失败并完成退款，请重新发送以创建新请求。",
         accountState.starBalance,
+        quotaSnapshot(accountState),
       );
     }
 
@@ -480,6 +808,7 @@ export async function reserveChatTurn(input: {
         clientRequestId: input.clientRequestId,
         requestHash: fingerprint,
         costStars: input.costStars,
+        quotaUnits: 1,
       },
     });
     const lock = await tx.aiSession.updateMany({
@@ -492,6 +821,24 @@ export async function reserveChatTurn(input: {
     }
 
     const accountState = await getDbAccountState(tx, input.session.userId, input.session);
+
+    const quotaClaim = await tx.membership.updateMany({
+      where: {
+        userId: input.session.userId,
+        isActive: true,
+        chatUsed: { lt: accountState.chatQuota },
+      },
+      data: { chatUsed: { increment: 1 } },
+    });
+
+    if (quotaClaim.count !== 1) {
+      throw new ChatTurnError(
+        "CHAT_QUOTA_EXCEEDED",
+        402,
+        `本月问答次数已用完（${accountState.chatQuota} 次），请升级会员后继续。`,
+        accountState.starBalance,
+      );
+    }
 
     if (accountState.starBalance < input.costStars) {
       throw new ChatTurnError(
@@ -546,18 +893,45 @@ export async function reserveChatTurn(input: {
       sequence,
       createdSession,
       balanceAfter,
+      ...quotaSnapshot({ chatQuota: accountState.chatQuota, chatUsed: accountState.chatUsed + 1 }),
       history,
     };
   });
 }
 
-export async function completeChatTurn(input: {
+function buildAssistantToolResult(input: {
+  result: AiChatResultDraft;
+  usageLogId: string;
+  status: typeof AiTurnStatus.COMPLETED | typeof AiTurnStatus.PARTIAL;
+  deliveryState: "CHECKPOINT" | "FINALIZED";
+}) {
+  return toJsonValue({
+    intent: input.result.intent,
+    serviceMode: input.result.serviceMode,
+    answerShape: input.result.answerShape,
+    answerStatus: input.result.structuredAnswer.status,
+    conclusion: input.result.conclusion,
+    toolCalls: input.result.toolCalls,
+    contextSummary: input.result.contextSummary,
+    provider: input.result.provider,
+    model: input.result.model,
+    usageLogId: input.usageLogId,
+    costCents: input.result.costCents,
+    costEstimate: input.result.costEstimate,
+    promptMetadata: input.result.promptMetadata,
+    validation: input.result.validation,
+    turnStatus: input.status,
+    deliveryState: input.deliveryState,
+  });
+}
+
+export async function persistChatTurnCheckpoint(input: {
   userId: string;
   turnId: string;
   question: string;
   result: AiChatResultDraft;
   usage: UsageLogInput;
-  status: typeof AiTurnStatus.COMPLETED | typeof AiTurnStatus.PARTIAL;
+  intendedStatus: typeof AiTurnStatus.COMPLETED | typeof AiTurnStatus.PARTIAL;
 }) {
   return runSerializable(async (tx) => {
     const turn = await tx.aiTurn.findFirst({
@@ -602,12 +976,14 @@ export async function completeChatTurn(input: {
           ...usageMetadata,
           turnId: turn.id,
           sessionId: turn.sessionId,
-          turnStatus: input.status,
+          turnStatus: input.intendedStatus,
+          deliveryCheckpoint: true,
+          deliveryState: "CHECKPOINT",
         }),
       },
     });
     const accountState = await getDbAccountState(tx, input.userId);
-    const complete = {
+    const checkpoint = {
       ok: true as const,
       ...input.result,
       usageLogId,
@@ -615,11 +991,15 @@ export async function completeChatTurn(input: {
       chatSessionId: turn.sessionId,
       turnId: turn.id,
       turnSequence: turn.sequence,
-      turnStatus: input.status,
+      turnStatus: input.intendedStatus,
+      intendedTurnStatus: input.intendedStatus,
+      deliveryState: "CHECKPOINT" as const,
+      counted: Math.max(0, turn.quotaUnits - turn.refundedQuotaUnits) > 0,
       replayed: false,
       cost: Math.max(0, turn.costStars - turn.refundedStars),
       balanceAfter: accountState.starBalance,
-    } satisfies ChatCompleteData;
+      ...quotaSnapshot(accountState),
+    } satisfies ChatInternalCompleteData;
 
     await tx.message.create({
       data: {
@@ -628,21 +1008,11 @@ export async function completeChatTurn(input: {
         ordinal: 1,
         role: MessageRole.ASSISTANT,
         content: input.result.answer,
-        toolResult: toJsonValue({
-          intent: input.result.intent,
-          serviceMode: input.result.serviceMode,
-          answerShape: input.result.answerShape,
-          answerStatus: input.result.structuredAnswer.status,
-          conclusion: input.result.conclusion,
-          toolCalls: input.result.toolCalls,
-          provider: input.result.provider,
-          model: input.result.model,
+        toolResult: buildAssistantToolResult({
+          result: input.result,
           usageLogId,
-          costCents: input.result.costCents,
-          costEstimate: input.result.costEstimate,
-          promptMetadata: input.result.promptMetadata,
-          validation: input.result.validation,
-          turnStatus: input.status,
+          status: input.intendedStatus,
+          deliveryState: "CHECKPOINT",
         }),
         tokensIn: input.result.tokensIn,
         tokensOut: input.result.tokensOut,
@@ -651,29 +1021,25 @@ export async function completeChatTurn(input: {
     await tx.aiTurn.update({
       where: { id: turn.id },
       data: {
-        status: input.status,
+        status: AiTurnStatus.PARTIAL,
         provider: input.result.provider,
         model: input.result.model,
         usageLogId,
-        result: toJsonValue(complete),
-        completedAt: new Date(),
+        errorCode: "ANSWER_DELIVERY_CHECKPOINT",
+        result: toJsonValue(checkpoint),
+        completedAt: null,
       },
     });
-    await tx.aiSession.updateMany({
-      where: { id: turn.sessionId, activeTurnId: turn.id },
-      data: { activeTurnId: null },
-    });
 
-    return complete;
+    return checkpoint;
   });
 }
 
-export async function failChatTurn(input: {
+export async function finalizeChatTurnDelivery(input: {
   userId: string;
   turnId: string;
-  session: Pick<SessionPayload, "tier" | "starBalance">;
-  status: typeof AiTurnStatus.FAILED | typeof AiTurnStatus.CANCELLED;
-  errorCode: string;
+  answer: string;
+  status: typeof AiTurnStatus.COMPLETED | typeof AiTurnStatus.PARTIAL;
 }) {
   return runSerializable(async (tx) => {
     const turn = await tx.aiTurn.findFirst({
@@ -684,17 +1050,180 @@ export async function failChatTurn(input: {
       throw new ChatTurnError("TURN_STATE_INVALID", 409, "对话轮次不存在。");
     }
 
-    if (turn.status === AiTurnStatus.GENERATING) {
+    const stored = parseStoredResult(turn.result);
+    if (!stored) {
+      throw new ChatTurnError("TURN_RESULT_UNAVAILABLE", 409, "对话结果暂时无法恢复。");
+    }
+
+    if (turn.completedAt) {
+      return stored;
+    }
+
+    if (turn.status !== AiTurnStatus.PARTIAL) {
+      throw new ChatTurnError("TURN_STATE_INVALID", 409, "当前对话轮次不能确认交付。");
+    }
+
+    const complete = await confirmDeliveryCheckpointInTransaction({
+      tx,
+      turn,
+      checkpoint: stored,
+      answer: input.answer,
+      status: input.status,
+    });
+
+    if (!complete) {
+      throw new ChatTurnError("TURN_STATE_INVALID", 409, "当前对话轮次不能确认交付。");
+    }
+
+    return complete;
+  });
+}
+
+export async function markChatTurnDeliveryRecoverable(input: {
+  userId: string;
+  turnId: string;
+  status: typeof AiTurnStatus.COMPLETED | typeof AiTurnStatus.PARTIAL;
+}) {
+  return runSerializable(async (tx) => {
+    const turn = await tx.aiTurn.findFirst({
+      where: { id: input.turnId, userId: input.userId },
+    });
+
+    if (!turn) {
+      throw new ChatTurnError("TURN_STATE_INVALID", 409, "对话轮次不存在。");
+    }
+
+    const stored = parseStoredResult(turn.result);
+    if (!stored) {
+      throw new ChatTurnError("TURN_RESULT_UNAVAILABLE", 409, "对话结果暂时无法恢复。");
+    }
+
+    if (turn.completedAt) {
+      return stored;
+    }
+
+    if (turn.status !== AiTurnStatus.PARTIAL) {
+      throw new ChatTurnError("TURN_STATE_INVALID", 409, "当前对话轮次不能标记为待恢复。");
+    }
+
+    const recoverable = {
+      ...stored,
+      turnStatus: input.status,
+      intendedTurnStatus: input.status,
+      deliveryState: "RECOVERABLE" as const,
+    } satisfies ChatInternalCompleteData;
+    const updated = await tx.aiTurn.updateMany({
+      where: {
+        id: turn.id,
+        status: AiTurnStatus.PARTIAL,
+        completedAt: null,
+      },
+      data: {
+        errorCode: "ANSWER_DELIVERY_PENDING",
+        result: toJsonValue(recoverable),
+      },
+    });
+
+    if (updated.count !== 1) {
+      throw new ChatTurnError("TURN_STATE_INVALID", 409, "当前对话轮次状态已变化。");
+    }
+
+    return recoverable;
+  });
+}
+
+export async function recoverPendingChatDeliveries(input: {
+  userId: string;
+  sessionId?: string;
+  take?: number;
+}) {
+  return runSerializable(async (tx) => {
+    const now = Date.now();
+    const turns = await tx.aiTurn.findMany({
+      where: {
+        userId: input.userId,
+        ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+        OR: [
+          {
+            status: AiTurnStatus.PARTIAL,
+            completedAt: null,
+            OR: [
+              { errorCode: "ANSWER_DELIVERY_PENDING" },
+              { updatedAt: { lt: new Date(now - getDeliveryCheckpointStaleMs()) } },
+            ],
+          },
+          {
+            status: AiTurnStatus.GENERATING,
+            startedAt: { lt: new Date(now - getStaleTurnThresholdMs()) },
+          },
+        ],
+      },
+      orderBy: { updatedAt: "asc" },
+      take: Math.min(Math.max(input.take ?? 12, 1), 50),
+    });
+
+    return settleSelectedChatTurnsInTransaction({ tx, turns });
+  });
+}
+
+export async function reconcileStaleChatTurns(input: { take?: number } = {}) {
+  return runSerializable(async (tx) => {
+    const now = Date.now();
+    const turns = await tx.aiTurn.findMany({
+      where: {
+        OR: [
+          {
+            status: AiTurnStatus.PARTIAL,
+            completedAt: null,
+            updatedAt: { lt: new Date(now - getDeliveryCheckpointStaleMs()) },
+          },
+          {
+            status: AiTurnStatus.GENERATING,
+            startedAt: { lt: new Date(now - getStaleTurnThresholdMs()) },
+          },
+        ],
+      },
+      orderBy: { updatedAt: "asc" },
+      take: Math.min(Math.max(input.take ?? 50, 1), 200),
+    });
+
+    return settleSelectedChatTurnsInTransaction({ tx, turns });
+  });
+}
+
+export async function failChatTurn(input: {
+  userId: string;
+  turnId: string;
+  session: Pick<SessionPayload, "tier" | "starBalance">;
+  status: typeof AiTurnStatus.FAILED | typeof AiTurnStatus.CANCELLED;
+  errorCode: string;
+  failureDetails?: string[];
+}) {
+  return runSerializable(async (tx) => {
+    const turn = await tx.aiTurn.findFirst({
+      where: { id: input.turnId, userId: input.userId },
+    });
+
+    if (!turn) {
+      throw new ChatTurnError("TURN_STATE_INVALID", 409, "对话轮次不存在。");
+    }
+
+    const refundableCheckpoint = turn.status === AiTurnStatus.PARTIAL && !turn.completedAt;
+    if (turn.status === AiTurnStatus.GENERATING || refundableCheckpoint) {
       return refundTurnInTransaction({
         tx,
         turn,
         fallback: input.session,
         status: input.status,
         errorCode: input.errorCode,
+        failureDetails: input.failureDetails,
       });
     }
 
     const accountState = await getDbAccountState(tx, input.userId, input.session);
-    return accountState.starBalance;
+    return {
+      balanceAfter: accountState.starBalance,
+      ...quotaSnapshot(accountState),
+    };
   });
 }

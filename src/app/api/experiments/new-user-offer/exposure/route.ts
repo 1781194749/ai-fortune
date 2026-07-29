@@ -1,5 +1,6 @@
 import { recordCheckoutExperimentExposure } from "@/lib/checkout-experiment";
 import { isDatabaseUnavailableError } from "@/lib/prisma";
+import { publicApiErrorResponse } from "@/lib/public-api-error";
 import { getSession } from "@/lib/session";
 
 export async function POST() {
@@ -23,13 +24,9 @@ export async function POST() {
       recorded: Boolean(record),
     });
   } catch (error) {
-    if (isDatabaseUnavailableError(error)) {
-      return Response.json(
-        { ok: false, code: error.code, message: error.message },
-        { status: error.status },
-      );
-    }
-
-    throw error;
+    return publicApiErrorResponse(error, {
+      context: "record checkout experiment exposure",
+      message: "当前暂时无法记录活动信息。",
+    });
   }
 }

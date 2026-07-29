@@ -5,6 +5,12 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
 
+for (const filename of [".env", ".env.local"]) {
+  if (existsSync(path.resolve(process.cwd(), filename))) {
+    process.loadEnvFile(filename);
+  }
+}
+
 const statuses = {
   ready: "ready",
   blocking: "blocking",
@@ -166,13 +172,14 @@ function runStaticChecks(result, root) {
     label: "四档会员权益字段",
     content: readProjectFile(root, "src/lib/commerce.ts"),
     tokens: [
-      "starGrant: 350",
-      "reportQuota: 2",
-      "palmQuota: 3",
-      "reportQuota: 6",
-      "palmQuota: 10",
-      "reportQuota: 12",
-      "palmQuota: 36",
+      "chatQuota: 30",
+      "profileLimit: 10",
+      "reportQuota: 1",
+      "palmQuota: 1",
+      "chatQuota: 100",
+      "profileLimit: 30",
+      "chatQuota: 200",
+      "profileLimit: 100",
     ],
     readyDetail: "会员商品包含星力、深度报告额度和手相额度。",
     readyAction: "保留商品权益配置。",
@@ -328,19 +335,19 @@ function runStaticChecks(result, root) {
   checkContainsAll(result, {
     id: "member-page-entitlements",
     group: "会员中心",
-    label: "权益可见",
-    content: readProjectFile(root, "src/app/member/page.tsx"),
+    label: "套餐与用量可见",
+    content: readProjectFile(root, "src/app/member/entitlements/page.tsx"),
     tokens: [
       "getMemberEntitlementSummary",
-      "深度报告额度",
-      "手相额度",
       "getEntitlementUsageLabel",
-      "份深度报告额度",
-      "次手相额度",
+      "本月问答",
+      "会员周期",
+      "额度明细",
+      "查看可购买方案",
     ],
-    readyDetail: "会员中心展示星力、档位、深度报告额度和手相额度。",
-    readyAction: "保留会员中心权益展示。",
-    blockingAction: "补齐会员中心权益展示和套餐权益说明。",
+    readyDetail: "套餐与用量页展示会员周期、问答、报告和手相额度。",
+    readyAction: "保留套餐与用量页的权益展示。",
+    blockingAction: "补齐套餐与用量页的权益展示和套餐说明。",
   });
 
   checkContainsAll(result, {
@@ -462,6 +469,7 @@ async function fetchWithTimeout(input) {
         "content-type": input.contentType ?? "application/json",
         cookie: input.cookie ?? "",
         "user-agent": "xuanji-launch-member-entitlements-check/1.0",
+        ...(input.headers ?? {}),
       },
       body: input.body,
     });
@@ -504,28 +512,75 @@ async function readJson(response) {
   return await response.json().catch(() => null);
 }
 
+function adminHeaders(input) {
+  return input.adminToken ? { "x-admin-token": input.adminToken } : {};
+}
+
+function adminPageUrl(input, section) {
+  const url = new URL("/admin", input.baseUrl);
+
+  if (section) {
+    url.searchParams.set("section", section);
+  }
+
+  if (input.adminToken) {
+    url.searchParams.set("token", input.adminToken);
+  }
+
+  return url.toString();
+}
+
+function adminOperationsUrl(input) {
+  const url = new URL("/admin/operations", input.baseUrl);
+
+  if (input.adminToken) {
+    url.searchParams.set("token", input.adminToken);
+  }
+
+  return url.toString();
+}
+
 async function runRuntimeChecks(result, input) {
   try {
     const email = `member-entitlements-${Date.now()}@example.com`;
     const userId = emailToUserId(email);
-    const loginResponse = await fetchWithTimeout({
-      url: `${input.baseUrl}/api/auth/email/verify`,
+    const codeResponse = await fetchWithTimeout({
+      url: `${input.baseUrl}/api/auth/email/request`,
       method: "POST",
       timeoutMs: input.timeoutMs,
-      body: JSON.stringify({ email, code: "000000", returnTo: "/member" }),
+      headers: { "x-xuanji-local-email-auth": "1" },
+      body: JSON.stringify({ email }),
     });
-    const loginJson = await readJson(loginResponse);
-    const cookie = getCookieHeader(loginResponse);
-    const loginReady = loginResponse.status === 200 && loginJson?.ok === true && cookie.includes("xuanji_session=");
+    const codeJson = await readJson(codeResponse);
+    const developmentCode = /^\d{6}$/.test(String(codeJson?.devCode ?? ""))
+      ? String(codeJson.devCode)
+      : null;
+    const loginResponse = developmentCode
+      ? await fetchWithTimeout({
+          url: `${input.baseUrl}/api/auth/email/verify`,
+          method: "POST",
+          timeoutMs: input.timeoutMs,
+          headers: { "x-xuanji-local-email-auth": "1" },
+          body: JSON.stringify({ email, code: developmentCode, returnTo: "/member" }),
+        })
+      : null;
+    const loginJson = loginResponse ? await readJson(loginResponse) : null;
+    const cookie = loginResponse ? getCookieHeader(loginResponse) : "";
+    const loginReady =
+      codeResponse.status === 200 &&
+      developmentCode !== null &&
+      loginResponse?.status === 200 &&
+      loginJson?.ok === true &&
+      cookie.includes("xuanji_session=");
 
     addRuntimeCheck(result, {
       id: "runtime-login",
-      label: "开发验证码登录",
+      label: "显式申请开发验证码后登录",
       ready: loginReady,
-      readyDetail: "已登录并拿到会话 cookie。",
-      blockingDetail: `status=${loginResponse.status}, ok=${loginJson?.ok}, cookie=${Boolean(cookie)}`,
+      readyDetail: "已先申请一次性开发验证码，再登录并拿到会话 cookie。",
+      blockingDetail: `requestStatus=${codeResponse.status}, hasDevCode=${Boolean(developmentCode)}, verifyStatus=${loginResponse?.status ?? "<not-run>"}, ok=${loginJson?.ok}, cookie=${Boolean(cookie)}`,
       readyAction: "继续运行购买和权益验收。",
-      blockingAction: "确认 dev 环境允许 000000 验证码登录。",
+      blockingAction: "确认验收指向本机非生产服务，且邮箱验证码申请与校验接口可用。",
     });
 
     if (!loginReady) {
@@ -571,14 +626,14 @@ async function runRuntimeChecks(result, input) {
     const payReady =
       payResponse.status === 200 &&
       payJson?.ok === true &&
-      payJson?.transaction?.amount === 350 &&
-      payJson?.transaction?.balanceAfter === 350;
+      payJson?.transaction?.amount === 20 &&
+      payJson?.transaction?.balanceAfter === 30;
 
     addRuntimeCheck(result, {
       id: "runtime-pay-monthly-order",
       label: "支付后发放星力",
       ready: payReady,
-      readyDetail: "月度会员支付后发放 350 星力，并刷新会话。",
+      readyDetail: "轻享月卡支付后发放问答、档案和工具权益，并刷新会话。",
       blockingDetail: `status=${payResponse.status}, amount=${payJson?.transaction?.amount}, balance=${payJson?.transaction?.balanceAfter}`,
       readyAction: "继续核对会员中心。",
       blockingAction: "检查 completeMockOrder、WalletTransaction 和 createSession。",
@@ -608,40 +663,75 @@ async function runRuntimeChecks(result, input) {
     });
 
     const memberResponse = await fetchWithTimeout({
-      url: `${input.baseUrl}/member`,
+      url: `${input.baseUrl}/member/entitlements`,
       timeoutMs: input.timeoutMs,
       cookie: updatedCookie,
     });
     const memberText = normalizeHtmlText(await memberResponse.text());
     const memberReady =
       memberResponse.status === 200 &&
-      memberText.includes("星力余额") &&
-      memberText.includes("350") &&
+      memberText.includes("本月问答") &&
+      memberText.includes("30") &&
       memberText.includes("深度报告额度") &&
       memberText.includes("手相额度") &&
-      memberText.includes("2") &&
-      memberText.includes("3");
+      memberText.includes("1");
 
     addRuntimeCheck(result, {
       id: "runtime-member-entitlements-visible",
       label: "会员中心权益到账",
       ready: memberReady,
-      readyDetail: "会员中心能看到星力、深度报告额度和手相额度。",
-      blockingDetail: `status=${memberResponse.status}, hasStars=${memberText.includes("350")}, hasReportQuota=${memberText.includes("深度报告额度")}, hasPalmQuota=${memberText.includes("手相额度")}`,
-      readyAction: "保留会员中心权益展示。",
-      blockingAction: "检查 member/page.tsx 的权益汇总展示。",
+      readyDetail: "套餐与用量页能看到问答、档案、深度报告和手相额度。",
+      blockingDetail: `status=${memberResponse.status}, hasChatQuota=${memberText.includes("本月问答")}, hasReportQuota=${memberText.includes("深度报告额度")}, hasPalmQuota=${memberText.includes("手相额度")}`,
+      readyAction: "保留套餐与用量页的权益展示。",
+      blockingAction: "检查 member/entitlements/page.tsx 的权益汇总展示。",
     });
+
+    const baziResponse = await fetchWithTimeout({
+      url: `${input.baseUrl}/api/fortune/bazi`,
+      method: "POST",
+      timeoutMs: input.timeoutMs,
+      cookie: updatedCookie,
+      body: JSON.stringify({
+        name: "会员权益验收",
+        gender: "female",
+        birthDate: "1990-01-02",
+        birthTime: "08:30",
+        birthPlace: "上海",
+        calendarType: "solar",
+      }),
+    });
+    const baziJson = await readJson(baziResponse);
+    const preparedCookie = getCookieHeader(baziResponse) || updatedCookie;
+    const balanceAfterBazi = baziJson?.balanceAfter;
+    const baziReady =
+      baziResponse.status === 200 &&
+      baziJson?.ok === true &&
+      typeof balanceAfterBazi === "number";
+
+    addRuntimeCheck(result, {
+      id: "runtime-prepare-bazi-profile",
+      label: "完成深度报告八字前置资料",
+      ready: baziReady,
+      readyDetail: "已完成八字排盘并持久化深度报告所需证据。",
+      blockingDetail: `status=${baziResponse.status}, ok=${baziJson?.ok}, balance=${balanceAfterBazi}`,
+      readyAction: "继续验证深度报告额度。",
+      blockingAction: "检查 /api/fortune/bazi 是否保存完整命盘证据。",
+    });
+
+    if (!baziReady) {
+      return;
+    }
 
     const deepPageResponse = await fetchWithTimeout({
       url: `${input.baseUrl}/reports/deep`,
       timeoutMs: input.timeoutMs,
-      cookie: updatedCookie,
+      cookie: preparedCookie,
     });
     const deepPageText = normalizeHtmlText(await deepPageResponse.text());
     const deepPageReady =
       deepPageResponse.status === 200 &&
       deepPageText.includes("会员报告额度") &&
-      deepPageText.includes("剩余 2 份") &&
+      deepPageText.includes("剩余 1 份") &&
       deepPageText.includes("用会员额度生成");
 
     addRuntimeCheck(result, {
@@ -658,16 +748,16 @@ async function runRuntimeChecks(result, input) {
       url: `${input.baseUrl}/api/reports/deep/member-quota`,
       method: "POST",
       timeoutMs: input.timeoutMs,
-      cookie: updatedCookie,
+      cookie: preparedCookie,
       body: JSON.stringify({ productCode: "bazi_detail" }),
     });
     const deepQuotaJson = await readJson(deepQuotaResponse);
     const deepQuotaReady =
-      deepQuotaResponse.status === 200 &&
+      deepQuotaResponse.status === 202 &&
       deepQuotaJson?.ok === true &&
       deepQuotaJson?.report?.status === "GENERATING" &&
       deepQuotaJson?.entitlement?.used === 1 &&
-      deepQuotaJson?.entitlement?.remaining === 1;
+      deepQuotaJson?.entitlement?.remaining === 0;
 
     addRuntimeCheck(result, {
       id: "runtime-deep-quota-consumption",
@@ -683,7 +773,7 @@ async function runRuntimeChecks(result, input) {
       url: `${input.baseUrl}/api/storage/qiniu/upload-token`,
       method: "POST",
       timeoutMs: input.timeoutMs,
-      cookie: updatedCookie,
+      cookie: preparedCookie,
       body: JSON.stringify({
         filename: "palm-test.jpg",
         contentType: "image/jpeg",
@@ -695,14 +785,14 @@ async function runRuntimeChecks(result, input) {
       url: `${input.baseUrl}/api/images/palm`,
       method: "POST",
       timeoutMs: input.timeoutMs,
-      cookie: updatedCookie,
+      cookie: preparedCookie,
       body: JSON.stringify({
         key: tokenJson?.key ?? `mock/palm-test-${Date.now()}.jpg`,
-        url: tokenJson?.publicUrl ?? "mock://palm-test.jpg",
+        url: "mock://palm-test.jpg",
         contentType: "image/jpeg",
         sizeBytes: 1024,
         originalName: "palm-test.jpg",
-        provider: tokenJson?.mode ?? "mock",
+        provider: "mock",
       }),
     });
     const imageJson = await readJson(imageResponse);
@@ -731,7 +821,7 @@ async function runRuntimeChecks(result, input) {
       url: `${input.baseUrl}/api/fortune/palm`,
       method: "POST",
       timeoutMs: input.timeoutMs,
-      cookie: updatedCookie,
+      cookie: preparedCookie,
       body: JSON.stringify({
         imageId,
         focus: "会员权益验收",
@@ -739,27 +829,26 @@ async function runRuntimeChecks(result, input) {
     });
     const palmJson = await readJson(palmResponse);
     const palmReady =
-      palmResponse.status === 200 &&
-      palmJson?.ok === true &&
-      palmJson?.paymentSource === "membership_quota" &&
-      palmJson?.cost === 0 &&
-      palmJson?.balanceAfter === 350 &&
-      palmJson?.entitlement?.remainingAfter === 2;
+      palmResponse.status === 503 &&
+      palmJson?.ok === false &&
+      palmJson?.imageStatus === "unverified" &&
+      palmJson?.charged === false &&
+      typeof palmJson?.paymentSource === "undefined";
 
     addRuntimeCheck(result, {
       id: "runtime-palm-quota-consumption",
-      label: "消费手相额度",
+      label: "未验证手相不扣额度",
       ready: palmReady,
-      readyDetail: "手相分析优先使用会员手相额度，不扣星力。",
-      blockingDetail: `status=${palmResponse.status}, source=${palmJson?.paymentSource}, cost=${palmJson?.cost}, balance=${palmJson?.balanceAfter}, remaining=${palmJson?.entitlement?.remainingAfter}`,
-      readyAction: "保留手相额度优先抵扣。",
-      blockingAction: "检查 /api/fortune/palm 的会员手相额度判断和返回。",
+      readyDetail: "本地 mock 图片未通过真实视觉校验时会明确失败，且不扣手相额度或星力。",
+      blockingDetail: `status=${palmResponse.status}, imageStatus=${palmJson?.imageStatus}, charged=${palmJson?.charged}, source=${palmJson?.paymentSource}`,
+      readyAction: "保留真实图片校验通过后才扣额度的边界。",
+      blockingAction: "检查 /api/fortune/palm 的图片校验和失败不扣费逻辑。",
     });
 
     const palmPageResponse = await fetchWithTimeout({
       url: `${input.baseUrl}/palm`,
       timeoutMs: input.timeoutMs,
-      cookie: updatedCookie,
+      cookie: preparedCookie,
     });
     const palmPageText = normalizeHtmlText(await palmPageResponse.text());
     const palmPageReady =
@@ -781,7 +870,8 @@ async function runRuntimeChecks(result, input) {
       url: `${input.baseUrl}/api/admin/entitlements/adjust`,
       method: "POST",
       timeoutMs: input.timeoutMs,
-      cookie: updatedCookie,
+      cookie: preparedCookie,
+      headers: adminHeaders(input),
       body: JSON.stringify({
         userId,
         kind: "deep_report",
@@ -795,7 +885,7 @@ async function runRuntimeChecks(result, input) {
       grantAdjustJson?.ok === true &&
       grantAdjustJson?.transaction?.type === "ADJUST" &&
       grantAdjustJson?.transaction?.amount === 1 &&
-      grantAdjustJson?.balance?.remaining === 2;
+      grantAdjustJson?.balance?.remaining === 1;
 
     addRuntimeCheck(result, {
       id: "runtime-admin-entitlement-grant-adjust",
@@ -811,12 +901,13 @@ async function runRuntimeChecks(result, input) {
       url: `${input.baseUrl}/api/admin/entitlements/adjust`,
       method: "POST",
       timeoutMs: input.timeoutMs,
-      cookie: updatedCookie,
+      cookie: preparedCookie,
+      headers: adminHeaders(input),
       body: JSON.stringify({
         userId,
-        kind: "palm_reading",
+        kind: "deep_report",
         amount: -1,
-        reason: "会员权益验收扣回 1 次手相额度",
+        reason: "会员权益验收扣回 1 份深度报告额度",
       }),
     });
     const spendAdjustJson = await readJson(spendAdjustResponse);
@@ -825,26 +916,33 @@ async function runRuntimeChecks(result, input) {
       spendAdjustJson?.ok === true &&
       spendAdjustJson?.transaction?.type === "ADJUST" &&
       spendAdjustJson?.transaction?.amount === -1 &&
-      spendAdjustJson?.balance?.remaining === 1;
+      spendAdjustJson?.balance?.remaining === 0;
 
     addRuntimeCheck(result, {
       id: "runtime-admin-entitlement-spend-adjust",
-      label: "后台扣回手相额度",
+      label: "后台扣回报告额度",
       ready: spendAdjustReady,
-      readyDetail: "后台接口可人工扣回 1 次手相额度，且不会扣成负数。",
+      readyDetail: "后台接口可人工扣回 1 份深度报告额度，且不会扣成负数。",
       blockingDetail: `status=${spendAdjustResponse.status}, type=${spendAdjustJson?.transaction?.type}, amount=${spendAdjustJson?.transaction?.amount}, remaining=${spendAdjustJson?.balance?.remaining}`,
       readyAction: "保留后台权益扣回能力。",
       blockingAction: "检查 /api/admin/entitlements/adjust 的负数调整和余额校验。",
     });
 
     const adminResponse = await fetchWithTimeout({
-      url: `${input.baseUrl}/admin`,
+      url: adminPageUrl(input, "assets"),
       timeoutMs: input.timeoutMs,
-      cookie: updatedCookie,
+      cookie: preparedCookie,
     });
     const adminText = normalizeHtmlText(await adminResponse.text());
+    const adminOperationsResponse = await fetchWithTimeout({
+      url: adminOperationsUrl(input),
+      timeoutMs: input.timeoutMs,
+      cookie: preparedCookie,
+    });
+    const adminOperationsText = normalizeHtmlText(await adminOperationsResponse.text());
     const adminReady =
       adminResponse.status === 200 &&
+      adminOperationsResponse.status === 200 &&
       adminText.includes("会员权益账本") &&
       adminText.includes("额度余额与发放流水") &&
       adminText.includes("深度报告额度") &&
@@ -852,7 +950,7 @@ async function runRuntimeChecks(result, input) {
       adminText.includes("发放") &&
       adminText.includes("消费") &&
       adminText.includes("调整") &&
-      adminText.includes("权益调整") &&
+      adminOperationsText.includes("权益调整") &&
       adminText.includes("幂等键");
 
     addRuntimeCheck(result, {
@@ -860,7 +958,7 @@ async function runRuntimeChecks(result, input) {
       label: "后台权益账本可观测",
       ready: adminReady,
       readyDetail: "后台能看到会员权益账户、余额、发放/消费/调整流水和操作审计。",
-      blockingDetail: `status=${adminResponse.status}, hasLedger=${adminText.includes("会员权益账本")}, hasReportQuota=${adminText.includes("深度报告额度")}, hasPalmQuota=${adminText.includes("手相额度")}, hasGrant=${adminText.includes("发放")}, hasSpend=${adminText.includes("消费")}, hasAdjust=${adminText.includes("调整")}, hasAudit=${adminText.includes("权益调整")}`,
+      blockingDetail: `assetsStatus=${adminResponse.status}, operationsStatus=${adminOperationsResponse.status}, hasLedger=${adminText.includes("会员权益账本")}, hasReportQuota=${adminText.includes("深度报告额度")}, hasPalmQuota=${adminText.includes("手相额度")}, hasGrant=${adminText.includes("发放")}, hasSpend=${adminText.includes("消费")}, hasAdjust=${adminText.includes("调整")}, hasAudit=${adminOperationsText.includes("权益调整")}`,
       readyAction: "保留 /admin 的权益账本运营视图。",
       blockingAction: "检查 /admin 是否读取 getAdminEntitlementAccounts/getAdminEntitlementTransactions 并展示流水。",
     });
@@ -869,7 +967,7 @@ async function runRuntimeChecks(result, input) {
       url: `${input.baseUrl}/api/payments/mock/orders`,
       method: "POST",
       timeoutMs: input.timeoutMs,
-      cookie: updatedCookie,
+      cookie: preparedCookie,
       body: JSON.stringify({ productCode: "monthly" }),
     });
     const refundOrderJson = await readJson(refundOrderResponse);
@@ -897,21 +995,21 @@ async function runRuntimeChecks(result, input) {
       url: `${input.baseUrl}/api/payments/mock/orders/${refundOrderId}/pay`,
       method: "POST",
       timeoutMs: input.timeoutMs,
-      cookie: updatedCookie,
+      cookie: preparedCookie,
     });
     const refundPayJson = await readJson(refundPayResponse);
-    const refundCookie = getCookieHeader(refundPayResponse) || updatedCookie;
+    const refundCookie = getCookieHeader(refundPayResponse) || preparedCookie;
     const refundPayReady =
       refundPayResponse.status === 200 &&
       refundPayJson?.ok === true &&
-      refundPayJson?.transaction?.amount === 350 &&
-      refundPayJson?.transaction?.balanceAfter === 700;
+      refundPayJson?.transaction?.amount === 20 &&
+      refundPayJson?.transaction?.balanceAfter === balanceAfterBazi + 20;
 
     addRuntimeCheck(result, {
       id: "runtime-pay-refund-test-order",
       label: "支付退款验收订单",
       ready: refundPayReady,
-      readyDetail: "第二笔月度会员订单支付后再次发放 350 星力。",
+      readyDetail: "第二笔轻享月卡订单支付后再次发放对应权益。",
       blockingDetail: `status=${refundPayResponse.status}, amount=${refundPayJson?.transaction?.amount}, balance=${refundPayJson?.transaction?.balanceAfter}`,
       readyAction: "继续调用后台退款接口。",
       blockingAction: "检查 mock 支付是否能对第二笔会员订单继续发放星力和权益。",
@@ -926,6 +1024,7 @@ async function runRuntimeChecks(result, input) {
       method: "POST",
       timeoutMs: input.timeoutMs,
       cookie: refundCookie,
+      headers: adminHeaders(input),
       body: JSON.stringify({
         reason: "会员权益验收后台订单退款",
       }),
@@ -936,8 +1035,8 @@ async function runRuntimeChecks(result, input) {
       refundJson?.ok === true &&
       refundJson?.order?.status === "REFUNDED" &&
       refundJson?.transaction?.type === "REFUND" &&
-      refundJson?.transaction?.amount === -350 &&
-      refundJson?.balanceAfter === 350 &&
+      refundJson?.transaction?.amount === -20 &&
+      refundJson?.balanceAfter === balanceAfterBazi &&
       Array.isArray(refundJson?.entitlementTransactions) &&
       refundJson.entitlementTransactions.length === 2;
 
@@ -956,6 +1055,7 @@ async function runRuntimeChecks(result, input) {
       method: "POST",
       timeoutMs: input.timeoutMs,
       cookie: refundCookie,
+      headers: adminHeaders(input),
       body: JSON.stringify({
         reason: "会员权益验收重复退款幂等",
       }),
@@ -978,24 +1078,31 @@ async function runRuntimeChecks(result, input) {
     });
 
     const refundAdminResponse = await fetchWithTimeout({
-      url: `${input.baseUrl}/admin`,
+      url: adminPageUrl(input, "orders"),
       timeoutMs: input.timeoutMs,
       cookie: refundCookie,
     });
     const refundAdminText = normalizeHtmlText(await refundAdminResponse.text());
+    const refundOperationsResponse = await fetchWithTimeout({
+      url: adminOperationsUrl(input),
+      timeoutMs: input.timeoutMs,
+      cookie: refundCookie,
+    });
+    const refundOperationsText = normalizeHtmlText(await refundOperationsResponse.text());
     const refundAdminReady =
       refundAdminResponse.status === 200 &&
+      refundOperationsResponse.status === 200 &&
       refundAdminText.includes("REFUNDED") &&
-      refundAdminText.includes("订单退款") &&
-      refundAdminText.includes("订单退款扣回") &&
-      refundAdminText.includes("membership_order_refund");
+      refundOperationsText.includes("订单退款") &&
+      refundOperationsText.includes("订单退款扣回") &&
+      refundOperationsText.includes("membership_order_refund");
 
     addRuntimeCheck(result, {
       id: "runtime-admin-order-refund-observable",
       label: "后台退款可观测",
       ready: refundAdminReady,
       readyDetail: "后台能看到已退款订单、钱包退款流水、权益扣回流水和订单退款审计。",
-      blockingDetail: `status=${refundAdminResponse.status}, hasRefunded=${refundAdminText.includes("REFUNDED")}, hasAudit=${refundAdminText.includes("订单退款")}, hasWallet=${refundAdminText.includes("订单退款扣回")}, hasEntitlement=${refundAdminText.includes("membership_order_refund")}`,
+      blockingDetail: `ordersStatus=${refundAdminResponse.status}, operationsStatus=${refundOperationsResponse.status}, hasRefunded=${refundAdminText.includes("REFUNDED")}, hasAudit=${refundOperationsText.includes("订单退款")}, hasWallet=${refundOperationsText.includes("订单退款扣回")}, hasEntitlement=${refundOperationsText.includes("membership_order_refund")}`,
       readyAction: "保留 /admin 的订单退款运营视图。",
       blockingAction: "检查 /admin 是否展示退款订单、钱包流水、权益流水和 order_refund 审计。",
     });
@@ -1035,6 +1142,7 @@ async function main() {
   const input = {
     baseUrl: args.baseUrl ? normalizeBaseUrl(args.baseUrl) : undefined,
     timeoutMs: args.timeoutMs,
+    adminToken: process.env.ADMIN_ACCESS_TOKEN?.trim() || undefined,
   };
   const root = process.cwd();
   const result = createResult(input);

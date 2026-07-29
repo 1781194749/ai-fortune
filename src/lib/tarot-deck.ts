@@ -434,6 +434,9 @@ type MinorRankProfile = {
   rank: string;
   label: string;
   code: string;
+};
+
+type MinorCardMeaning = {
   keywords: string[];
   upright: string;
   reversed: string;
@@ -521,204 +524,123 @@ const minorSuits = [
 ] satisfies MinorSuitProfile[];
 
 const minorRanks = [
-  {
-    rank: "ace",
-    label: "王牌",
-    code: "A",
-    keywords: ["开端", "潜力", "种子"],
-    upright: "新的种子出现，机会还小但很有生命力。",
-    reversed: "开端受阻，可能有迟疑、资源不足或时机未到。",
-    advice: "先保护这个起点，用一个小承诺让它发芽。",
-    context: "重点是新机会和第一步验证。",
-  },
-  {
-    rank: "two",
-    label: "二",
-    code: "02",
-    keywords: ["选择", "平衡", "协商"],
-    upright: "两股力量需要平衡，选择必须从现实比较开始。",
-    reversed: "摇摆、僵持或回避决定，拖延会消耗窗口。",
-    advice: "把两个选项的成本、收益和退出条件写清楚。",
-    context: "重点是对比、协商和决定标准。",
-  },
-  {
-    rank: "three",
-    label: "三",
-    code: "03",
-    keywords: ["合作", "扩展", "反馈"],
-    upright: "事情进入合作和扩展阶段，外部反馈开始变重要。",
-    reversed: "协作不顺、期待不齐或扩张过快。",
-    advice: "先对齐目标和分工，再谈扩大规模。",
-    context: "重点是合作质量和外部回应。",
-  },
-  {
-    rank: "four",
-    label: "四",
-    code: "04",
-    keywords: ["稳定", "结构", "安全"],
-    upright: "局面需要稳定结构，安全感来自清楚边界。",
-    reversed: "稳定变成停滞，或者安全感建立在过度防守上。",
-    advice: "保留基本盘，同时给变化留一点空间。",
-    context: "重点是稳定、边界和安全感。",
-  },
-  {
-    rank: "five",
-    label: "五",
-    code: "05",
-    keywords: ["冲突", "损耗", "挑战"],
-    upright: "挑战、竞争或损耗浮现，需要正视问题而非绕开。",
-    reversed: "冲突开始缓和，但旧损耗仍需修复。",
-    advice: "先止损，再判断是否值得继续投入。",
-    context: "重点是冲突、损耗和修复成本。",
-  },
-  {
-    rank: "six",
-    label: "六",
-    code: "06",
-    keywords: ["调整", "互惠", "过渡"],
-    upright: "局面进入过渡与调整期，互惠关系会带来支持。",
-    reversed: "支持不对等，或者旧问题反复影响前进。",
-    advice: "确认谁在付出、谁在受益，别让关系失衡。",
-    context: "重点是互惠、修复和过渡安排。",
-  },
-  {
-    rank: "seven",
-    label: "七",
-    code: "07",
-    keywords: ["评估", "防守", "策略"],
-    upright: "需要策略、防守和阶段评估，别急着全盘暴露。",
-    reversed: "防守过度、判断分散或因为怀疑错过窗口。",
-    advice: "设一个观察期，用事实更新策略。",
-    context: "重点是观察、策略和阶段性判断。",
-  },
-  {
-    rank: "eight",
-    label: "八",
-    code: "08",
-    keywords: ["推进", "练习", "速度"],
-    upright: "事情进入加速或重复练习期，熟练度会带来突破。",
-    reversed: "急躁、重复低效或节奏失控。",
-    advice: "把动作拆小，用稳定频率替代一阵猛冲。",
-    context: "重点是节奏、效率和持续练习。",
-  },
-  {
-    rank: "nine",
-    label: "九",
-    code: "09",
-    keywords: ["成熟", "临界", "独立"],
-    upright: "已经接近成熟或临界点，个人判断变得很关键。",
-    reversed: "疲惫、过度警惕或对成果缺少信任。",
-    advice: "承认已有成果，同时给自己补足恢复空间。",
-    context: "重点是临界点、个人承受力和成果确认。",
-  },
-  {
-    rank: "ten",
-    label: "十",
-    code: "10",
-    keywords: ["完成", "压力", "结果"],
-    upright: "一个周期走向结果，责任和收尾工作同时加重。",
-    reversed: "负担过重、结尾拖延或不愿放下旧责任。",
-    advice: "该收尾的收尾，该分担的分担，不要一个人扛完。",
-    context: "重点是周期结果、责任分配和收尾。",
-  },
-  {
-    rank: "page",
-    label: "侍从",
-    code: "侍",
-    keywords: ["学习", "消息", "试探"],
-    upright: "新的消息、学习心态和试探动作出现。",
-    reversed: "经验不足、信息幼稚或试探缺少诚意。",
-    advice: "先学习规则，再用小行动测试回应。",
-    context: "重点是消息、学习和初步试探。",
-  },
-  {
-    rank: "knight",
-    label: "骑士",
-    code: "骑",
-    keywords: ["追求", "移动", "推进"],
-    upright: "主动追求和移动带来变化，局面不适合原地等待。",
-    reversed: "行动过猛、方向摇摆或承诺不稳定。",
-    advice: "允许推进，但要给行动设置节奏和边界。",
-    context: "重点是主动推进、速度和方向稳定性。",
-  },
-  {
-    rank: "queen",
-    label: "王后",
-    code: "后",
-    keywords: ["成熟", "照料", "内在掌控"],
-    upright: "成熟的照料、接纳和内在掌控正在发挥作用。",
-    reversed: "情绪消耗、边界松动或过度承担。",
-    advice: "用成熟照顾局面，也要照顾自己的边界。",
-    context: "重点是成熟处理、接纳和边界照料。",
-  },
-  {
-    rank: "king",
-    label: "国王",
-    code: "王",
-    keywords: ["掌控", "领导", "定局"],
-    upright: "成熟掌控、领导力和定局能力出现。",
-    reversed: "控制欲、固执或责任使用不当。",
-    advice: "把权力用在承担责任上，而不是压住别人。",
-    context: "重点是掌控、责任和成熟定局。",
-  },
+  { rank: "ace", label: "王牌", code: "A" },
+  { rank: "two", label: "二", code: "02" },
+  { rank: "three", label: "三", code: "03" },
+  { rank: "four", label: "四", code: "04" },
+  { rank: "five", label: "五", code: "05" },
+  { rank: "six", label: "六", code: "06" },
+  { rank: "seven", label: "七", code: "07" },
+  { rank: "eight", label: "八", code: "08" },
+  { rank: "nine", label: "九", code: "09" },
+  { rank: "ten", label: "十", code: "10" },
+  { rank: "page", label: "侍从", code: "侍" },
+  { rank: "knight", label: "骑士", code: "骑" },
+  { rank: "queen", label: "王后", code: "后" },
+  { rank: "king", label: "国王", code: "王" },
 ] satisfies MinorRankProfile[];
 
+const minorCardMeanings = {
+  wands: {
+    ace: { keywords: ["灵感", "启动", "创造"], upright: "灵感和行动火花出现，适合启动有热情的新方向。", reversed: "动力受阻、方向不明或开局过热，想法尚未形成稳定行动。", advice: "先把最有生命力的想法落成一个具体开端。", context: "关键是这股新动力能否真正启动，而不只是短暂兴奋。" },
+    two: { keywords: ["规划", "远景", "选择"], upright: "已经站在现有成果上观察更远的可能，适合制定扩展计划。", reversed: "害怕未知、规划不足或只守着熟悉范围，选择因此迟滞。", advice: "先确认长期方向，再比较每条路需要承担的代价。", context: "重点是未来版图和行动路径，而不是当下谁更热闹。" },
+    three: { keywords: ["拓展", "远见", "进展"], upright: "前期投入开始向外延伸，合作、市场或远方反馈逐渐出现。", reversed: "扩展延误、协作受阻或预期过大，外部回应没有按计划到来。", advice: "检查外部条件和合作分工，再决定是否扩大。", context: "重点是已经发出的行动能否获得持续的外部回应。" },
+    four: { keywords: ["庆祝", "归属", "稳定"], upright: "阶段成果值得庆祝，关系或团队形成了较稳定的共同基础。", reversed: "表面热闹但归属感不足，家庭、团队或承诺基础仍不稳。", advice: "确认共同基础和归属，再进入下一阶段。", context: "关键在于成果能否沉淀成稳定关系、共同空间或正式节点。" },
+    five: { keywords: ["竞争", "摩擦", "较量"], upright: "多方目标和意见互相碰撞，竞争会消耗精力，也可能激发新办法。", reversed: "冲突被压住、竞争失序或各方避免真正对话，问题仍未解决。", advice: "先明确共同规则，区分建设性讨论和无效争胜。", context: "重点是竞争与分歧如何被管理，而不是简单判定谁输谁赢。" },
+    six: { keywords: ["胜利", "认可", "可见度"], upright: "努力获得认可，成果被看见，当前有胜利或提升影响力的机会。", reversed: "认可落空、过度在意评价或成绩没有得到应有确认。", advice: "让成果被清楚看见，同时确认认可是否真实且可持续。", context: "关键是成果、声誉和公开认可，而不是互惠或过渡。" },
+    seven: { keywords: ["坚守", "防卫", "立场"], upright: "已有位置值得守住，但需要面对挑战并清楚表达立场。", reversed: "压力过大、边界松动或因缺乏信心而放弃原有优势。", advice: "守住最重要的底线，不必同时回应所有挑战。", context: "重点是能否在外部压力下守住立场和既有成果。" },
+    eight: { keywords: ["加速", "消息", "进展"], upright: "信息和行动快速推进，延误减少，事情可能在短期集中发生。", reversed: "消息延误、行动混乱或速度快于协调能力，容易误判节奏。", advice: "抓住窗口，但先确认信息一致和行动顺序。", context: "关键是快速到来的消息、移动和进展能否被接住。" },
+    nine: { keywords: ["韧性", "警戒", "边界"], upright: "经历消耗后仍有守住最后一段的韧性，需要警觉但不必退缩。", reversed: "疲惫、防御过度或旧伤影响判断，继续硬撑可能得不偿失。", advice: "保护边界并补足体力，再判断最后一步是否值得。", context: "重点是经历考验后的承受力、警戒和最后防线。" },
+    ten: { keywords: ["重担", "责任", "超载"], upright: "责任和任务压得过重，成果背后伴随明显负担。", reversed: "开始卸下重担，也可能因逃避责任而把压力转给别人。", advice: "删减、委派或重排责任，不要把所有任务独自扛完。", context: "关键是负担是否超过承载，而不是一般的周期收尾。" },
+    page: { keywords: ["探索", "消息", "热情"], upright: "新鲜热情、创意消息或探索机会出现，适合试着走出第一步。", reversed: "热情不稳、缺乏跟进或消息只停留在口号层面。", advice: "保留好奇，但用一个完成动作检验热情。", context: "重点是新出现的行动消息和探索欲是否有后续。" },
+    knight: { keywords: ["冲刺", "冒险", "行动"], upright: "行动迅速、敢于冒险和追求目标，局面充满推进力。", reversed: "冲动、急躁、忽冷忽热或只顾追求刺激，承诺不够稳定。", advice: "可以推进，但先设方向、边界和减速点。", context: "关键是强烈推进力能否保持方向和持续性。" },
+    queen: { keywords: ["自信", "魅力", "独立"], upright: "自信、热情和感染力增强，能以成熟姿态吸引资源与支持。", reversed: "自信受损、嫉妒或过度依赖外界肯定，热情变得不稳定。", advice: "先站稳自己的价值，再主动表达和连接。", context: "重点是内在自信、个人魅力和独立行动力。" },
+    king: { keywords: ["远见", "领导", "开拓"], upright: "具备远见和领导力，适合定方向、整合团队并推动长期目标。", reversed: "专断、急于掌控或愿景脱离执行，权威可能压过合作。", advice: "用愿景带动行动，也要让责任和执行可检验。", context: "关键是领导者能否把远见变成稳定而负责的推进。" },
+  },
+  cups: {
+    ace: { keywords: ["情感开启", "爱", "直觉"], upright: "情感重新流动，爱、善意或直觉体验有了新的开端。", reversed: "情绪堵塞、压抑感受或把爱过度向外倾倒，内在容器不足。", advice: "先接住自己的真实感受，再决定如何表达。", context: "关键是新的情感连接是否真诚流动。" },
+    two: { keywords: ["互相吸引", "结合", "对等"], upright: "双方有相互吸引、理解或合作意愿，关系强调对等回应。", reversed: "关系失衡、沟通断裂或价值不一致，吸引不足以维持连接。", advice: "确认双方是否都在回应和承担，不要只看感觉。", context: "重点是两方能否形成对等、互相承认的连接。" },
+    three: { keywords: ["友谊", "庆祝", "支持"], upright: "朋友、团队和社群带来支持，适合分享成果和共同庆祝。", reversed: "社交过度、圈内矛盾或第三方干扰，让关系失去边界。", advice: "享受支持，同时厘清核心关系与群体影响。", context: "关键是社群支持、共同喜悦和第三方边界。" },
+    four: { keywords: ["冷淡", "停顿", "重新评估"], upright: "对现有机会缺乏兴趣，情绪进入停顿，需要重新看见真正需求。", reversed: "开始走出封闭、重新接受机会，也可能因害怕错过而仓促回应。", advice: "先分辨是确实不合适，还是疲惫让你看不见机会。", context: "重点是情感停滞与重新评估，不是简单的稳定。" },
+    five: { keywords: ["失落", "哀伤", "遗憾"], upright: "注意力停留在失去和遗憾上，需要允许哀伤，也要看见仍然保留的部分。", reversed: "逐渐接受损失、开始修复，或仍被旧遗憾拉回。", advice: "承认已经失去的，同时盘点仍可依靠的人与资源。", context: "关键是如何面对失落，并从遗憾中恢复。" },
+    six: { keywords: ["回忆", "重逢", "纯真"], upright: "过去的记忆、旧人或熟悉的安全感重新出现，带来温柔连接。", reversed: "困在过去、过度美化回忆，或开始摆脱旧模式走向成熟。", advice: "珍惜真实的温情，但用现在的行为校验旧印象。", context: "重点是过去、重逢和熟悉感如何影响当下。" },
+    seven: { keywords: ["幻想", "选择", "投射"], upright: "情感想象和选项过多，容易把愿望、诱惑或投射当成事实。", reversed: "幻想开始退潮，选择逐渐聚焦，但仍需核实现实条件。", advice: "把每个选项写成现实条件，只保留最值得验证的方向。", context: "重点是分辨想象、诱惑和真实回应。" },
+    eight: { keywords: ["离开", "寻求", "放下"], upright: "现有情感投入已难满足深层需要，适合离开旧局面寻找更真实的意义。", reversed: "害怕离开、反复回头，或尚未确认是否真的该放下。", advice: "确认你离开的原因和要寻找的东西，不要只靠逃避推动变化。", context: "关键是何时承认情感不再满足，并成熟地离开。" },
+    nine: { keywords: ["满足", "愿望", "享受"], upright: "个人愿望得到满足，情绪上有享受、充足和阶段性如愿。", reversed: "表面满足但内在空虚，期待过高或把享乐当成真正幸福。", advice: "享受成果，同时检查它是否满足了你的核心需要。", context: "重点是个人满足和愿望实现是否具有真实内涵。" },
+    ten: { keywords: ["情感圆满", "家庭", "和谐"], upright: "关系、家庭或群体呈现情感圆满与共同归属的可能。", reversed: "家庭期待、价值差异或表面和谐掩盖了真实裂缝。", advice: "把共同愿景落到日常责任和真实沟通。", context: "关键是长期情感归属、家庭价值与共同生活。" },
+    page: { keywords: ["情感消息", "敏感", "直觉"], upright: "温柔的消息、情感表达或直觉灵感出现，带有试探与真诚。", reversed: "情绪不成熟、过度敏感或表达含糊，消息难以稳定落地。", advice: "允许柔软表达，也要观察后续行动是否一致。", context: "重点是新出现的情感消息和直觉回应。" },
+    knight: { keywords: ["邀约", "浪漫", "追求"], upright: "浪漫邀约、情感追求或理想驱动的行动出现。", reversed: "理想化、情绪承诺反复或只会制造浪漫而缺少承担。", advice: "听见表达，也要用持续行动检验承诺。", context: "关键是追求与邀约能否从浪漫走向现实承担。" },
+    queen: { keywords: ["共情", "直觉", "情感成熟"], upright: "共情、直觉和情感承载力较强，能温柔理解自己与他人。", reversed: "情绪淹没判断、过度照顾或边界不清，容易吸收他人压力。", advice: "相信感受，但先分清哪些情绪属于自己。", context: "重点是共情、情绪边界和内在直觉。" },
+    king: { keywords: ["情绪稳定", "包容", "外交"], upright: "情绪成熟而稳定，能在复杂感受中保持包容和清楚判断。", reversed: "压抑情绪、被动操控或表面冷静，真实感受没有被负责地处理。", advice: "稳定表达感受，用成熟沟通代替情绪控制。", context: "关键是情绪掌控、包容和成熟沟通。" },
+  },
+  swords: {
+    ace: { keywords: ["真相", "清晰", "突破"], upright: "思路突破、事实澄清或关键决定出现，适合直面真相。", reversed: "判断混乱、真相被扭曲或沟通缺乏清晰度，贸然决定容易出错。", advice: "先确认事实与定义，再做清楚而诚实的决定。", context: "重点是能否凭真相和清晰判断打开局面。" },
+    two: { keywords: ["僵局", "回避", "权衡"], upright: "两个方向形成僵局，当事人可能暂时封闭感受、回避选择。", reversed: "信息过载、犹豫加剧，或被迫看见无法继续回避的事实。", advice: "承认真正冲突，补齐决定所需的关键信息。", context: "关键是打破回避和僵持，而不是维持表面平衡。" },
+    three: { keywords: ["心痛", "分离", "真相"], upright: "失望、刺痛或难以回避的事实浮现，需要先承认伤口。", reversed: "伤口开始修复，也可能因压抑或反复回想而延长痛苦。", advice: "把事实和感受分开看清，再决定修复、沟通或退出。", context: "重点是面对失望、分离和造成刺痛的事实。" },
+    four: { keywords: ["休息", "恢复", "暂停"], upright: "需要暂时退出冲突、休息与整合思绪，恢复本身就是当前任务。", reversed: "休息不足、重新投入过早，或长期停滞让焦虑累积。", advice: "安排真正的暂停，等思路和精力恢复后再行动。", context: "关键是通过休整恢复判断力，而不是继续硬推。" },
+    five: { keywords: ["冲突", "空洞胜利", "损伤"], upright: "争胜可能带来表面优势，却伤害信任与长期合作。", reversed: "有意结束冲突、修复关系，也可能仍对旧争执耿耿于怀。", advice: "先判断这场胜负是否值得付出关系和信誉成本。", context: "重点是冲突代价，以及赢了局面是否失去更重要的东西。" },
+    six: { keywords: ["过渡", "离开困境", "迁移"], upright: "正在离开混乱进入较平静阶段，变化仍带着未完全消化的负担。", reversed: "难以离开旧问题、转变受阻或反复把过去带进新阶段。", advice: "接受过渡需要时间，明确要带走和要放下的部分。", context: "关键是从困境迁移到新阶段，而不是互惠交换。" },
+    seven: { keywords: ["策略", "隐瞒", "绕行"], upright: "需要独立策略或谨慎行动，也可能出现隐瞒、逃避责任和不透明做法。", reversed: "隐情暴露、良心不安或策略失效，事情要求更坦白的处理。", advice: "可以保护信息，但不要用策略掩盖关键事实和责任。", context: "重点是策略与隐瞒的边界，以及信息是否可信。" },
+    eight: { keywords: ["受限", "困住", "思维束缚"], upright: "感觉无路可走，但限制中有一部分来自恐惧和既有想法。", reversed: "开始看见出口、松开自我限制，也可能仍害怕采取行动。", advice: "区分真实限制和想象限制，先移动一个可控步骤。", context: "关键是识别自我束缚，并看见仍然存在的选择。" },
+    nine: { keywords: ["焦虑", "失眠", "担忧"], upright: "忧虑、内疚或失眠放大了最坏想象，心理压力需要被认真处理。", reversed: "焦虑开始缓解，或压力已累积到难以独自承担。", advice: "把担忧写成事实与假设，必要时寻求现实支持。", context: "重点是焦虑和最坏想象如何影响判断。" },
+    ten: { keywords: ["痛苦终结", "崩溃", "触底"], upright: "一段痛苦局面到达终点，事实虽难受，却也意味着不能再维持旧模式。", reversed: "开始从低点恢复，或拒绝结束而让痛苦延长。", advice: "承认这个阶段已经结束，把精力转向恢复和重建。", context: "关键是不可继续的旧局面如何结束，而不是一般的责任收尾。" },
+    page: { keywords: ["警觉", "求知", "消息"], upright: "好奇、警觉和信息搜集增强，适合提问、观察和学习。", reversed: "流言、试探过度或只收集信息不验证，沟通容易失真。", advice: "保持敏锐，但核实来源后再传播或行动。", context: "重点是新信息、观察力和消息可信度。" },
+    knight: { keywords: ["果断", "急进", "辩论"], upright: "思路和行动快速而直接，适合突破阻碍，但容易忽略他人节奏。", reversed: "鲁莽、争辩、行动失控或只求速度不顾后果。", advice: "保留果断，同时检查事实、语气和行动代价。", context: "关键是快速决断能否避免演变成冲动冲突。" },
+    queen: { keywords: ["清醒", "独立", "边界"], upright: "判断清醒、表达直接，能以经验和事实建立明确边界。", reversed: "尖锐、冷漠或因旧伤过度防御，判断可能失去弹性。", advice: "说清事实和边界，也给复杂处境留出理解空间。", context: "重点是独立判断、诚实表达和清楚边界。" },
+    king: { keywords: ["理性权威", "原则", "裁断"], upright: "逻辑、原则和专业判断占据主导，适合做有依据的决定。", reversed: "滥用权威、过度苛刻或只讲逻辑不顾事实全貌。", advice: "用一致标准做决定，并承担决定造成的影响。", context: "关键是理性权威能否建立在事实与公平原则上。" },
+  },
+  pentacles: {
+    ace: { keywords: ["物质机会", "资源", "落地"], upright: "新的工作、收入、资源或可落地机会出现，具备长期生长潜力。", reversed: "机会错失、资金不足或计划没有现实基础，开端难以落地。", advice: "核实资源、预算和执行条件，再把机会接稳。", context: "重点是现实机会能否形成可持续的物质基础。" },
+    two: { keywords: ["调度", "优先级", "适应"], upright: "多项责任需要灵活调度，暂时能维持平衡，但资源有限。", reversed: "事务超载、优先级混乱或财务失衡，继续兼顾会降低质量。", advice: "明确优先级，减少同时推进的事项。", context: "关键是时间、金钱和责任如何被动态分配。" },
+    three: { keywords: ["协作", "技能", "建设"], upright: "专业技能、清楚分工和团队协作正在形成可见成果。", reversed: "合作质量不足、标准不一或能力没有被正确使用。", advice: "对齐质量标准、角色和交付方式，再继续建设。", context: "重点是专业能力如何通过协作变成实际成果。" },
+    four: { keywords: ["占有", "安全", "控制"], upright: "重视稳定与守成，但抓得过紧可能让资源和关系失去流动。", reversed: "开始放松控制，也可能因财务不稳或挥霍而失去安全感。", advice: "守住底线资金和边界，同时检查控制是否过度。", context: "关键是安全感、占有与资源流动之间的平衡。" },
+    five: { keywords: ["匮乏", "困难", "被排除"], upright: "现实资源短缺、孤立或生活压力明显，但附近可能仍有可求助的支持。", reversed: "困境逐渐缓解、支持重新出现，或匮乏心态仍阻碍恢复。", advice: "先处理基本保障，并主动寻找可获得的现实支持。", context: "重点是如何面对匮乏、排斥感和现实困难。" },
+    six: { keywords: ["给予", "交换", "权力"], upright: "资源给予与接受较为流动，但双方位置和权力并不完全相同。", reversed: "付出附带条件、债务失衡或单方面索取，互惠关系出现问题。", advice: "看清谁掌握资源、交换条件是否公平、回报是否可持续。", context: "关键是给予、接受和权力差异，而不是笼统的过渡。" },
+    seven: { keywords: ["耐心", "评估", "长期回报"], upright: "长期投入进入等待和评估期，成果尚未成熟，需要检查投入产出。", reversed: "急于见效、投入方向错误或长期等待没有合理回报。", advice: "盘点已经投入的成本，设定继续等待的期限和标准。", context: "重点是长期投入是否值得继续等待。" },
+    eight: { keywords: ["工艺", "练习", "专注"], upright: "专注练习和重复打磨会提升技能，成果来自认真做工。", reversed: "敷衍重复、完美主义或只忙不精，努力没有转化成能力。", advice: "聚焦一个关键技能，用可检验的作品衡量进步。", context: "关键是通过专注练习形成专业能力和稳定质量。" },
+    nine: { keywords: ["独立", "丰足", "自给"], upright: "独立积累带来舒适、选择权和对成果的享受。", reversed: "表面丰足但依赖他人、过度消费或价值感建立在物质展示上。", advice: "确认你的稳定来自真实能力和资产，而不是外在证明。", context: "重点是独立成果、生活品质和自主选择权。" },
+    ten: { keywords: ["长期稳定", "家业", "传承"], upright: "长期财富、家庭结构或组织基础趋于稳定，强调传承和共同利益。", reversed: "家族或组织利益冲突、长期基础不稳，短期收益伤害了传承。", advice: "把长期规则、利益分配和共同责任说清楚。", context: "关键是长期稳定、家族或组织资源与传承。" },
+    page: { keywords: ["学习机会", "务实消息", "起步"], upright: "学习、工作或财务方面出现务实机会，适合认真研究和打基础。", reversed: "缺乏计划、学习不落地或只关注结果而忽视基本功。", advice: "把机会转成学习计划和第一份可交付成果。", context: "重点是务实的新机会能否通过学习真正落地。" },
+    knight: { keywords: ["可靠", "勤勉", "稳定推进"], upright: "以稳定、耐心和责任感推进，速度不快但可持续。", reversed: "停滞、固执、机械劳动或对责任失去投入感。", advice: "保持规律执行，同时检查方法是否需要更新。", context: "关键是承诺、可靠性和长期执行，而不是快速推进。" },
+    queen: { keywords: ["务实照料", "资源管理", "丰盛"], upright: "能务实照顾人和资源，把安全感落实到生活与管理。", reversed: "过度付出、忽视自己或因现实焦虑而控制资源。", advice: "照顾现实需要，也要保留自己的时间和资源边界。", context: "重点是务实照料、资源管理和生活稳定。" },
+    king: { keywords: ["物质掌控", "经营", "稳健"], upright: "具备经营、资源整合和长期建设能力，成果建立在稳健管理上。", reversed: "唯利是图、控制资源或过度保守，稳定可能变成僵化。", advice: "以长期价值管理资源，不要让占有欲替代责任。", context: "关键是财富与资源能否被成熟、稳健地经营。" },
+  },
+} satisfies Record<TarotSuit, Record<string, MinorCardMeaning>>;
+
 const minorArcana = minorSuits.flatMap((suit) =>
-  minorRanks.map((rank) => ({
-    id: `minor-${suit.suit}-${rank.rank}`,
-    name: `${suit.name}${rank.label}`,
-    arcana: "minor" as const,
-    suit: suit.suit,
-    rank: rank.rank,
-    element: suit.element,
-    keywords: [...rank.keywords, ...suit.keywords].slice(0, 6),
-    upright:
-      suit.suit === "cups" && rank.rank === "seven"
-        ? "情感想象、选项过多或投射感增强，容易把期待当成事实。"
-        : suit.suit === "swords" && rank.rank === "three"
-          ? "失望、刺痛或难以回避的沟通浮现，需要先承认事实再修复。"
-          : `${rank.upright}${suit.uprightFocus}`,
-    reversed:
-      suit.suit === "cups" && rank.rank === "seven"
-        ? "幻想开始退潮，但仍要分辨真实感受与逃避。"
-        : suit.suit === "swords" && rank.rank === "three"
-          ? "伤口正在被看见，适合停止反复内耗并寻找修复方式。"
-          : `${rank.reversed}${suit.reversedFocus}`,
-    advice:
-      suit.suit === "cups" && rank.rank === "seven"
-        ? "把选项写成现实条件，只保留一个最值得验证的方向。"
-        : suit.suit === "swords" && rank.rank === "three"
-          ? "先把事实和感受分开写清楚，再决定是否沟通或退出。"
-          : `${rank.advice}${suit.advice}`,
-    contexts: {
-      general:
-        suit.suit === "cups" && rank.rank === "seven"
-          ? "重点是分辨情感投射、想象和真实回应。"
-          : suit.suit === "swords" && rank.rank === "three"
-            ? "重点是承认失望、厘清沟通事实并设置修复边界。"
-            : `${rank.context}${suit.contexts.general}`,
-      love:
-        suit.suit === "cups" && rank.rank === "seven"
-          ? "关系里容易出现理想化或选项过多，先看持续回应而非想象。"
-          : suit.suit === "swords" && rank.rank === "three"
-            ? "关系里有失望或刺痛的沟通议题，先确认事实再决定修复方式。"
-            : `${rank.context}${suit.contexts.love}`,
-      career: `${rank.context}${suit.contexts.career}`,
-      wealth: `${rank.context}${suit.contexts.wealth}`,
-      wellbeing: `${rank.context}${suit.contexts.wellbeing}`,
-      decision:
-        suit.suit === "cups" && rank.rank === "seven"
-          ? "优先选择事实更清楚、能减少投射的一项。"
-          : suit.suit === "swords" && rank.rank === "three"
-            ? "优先选择能正面处理事实、降低持续损耗的一项。"
-            : `${rank.context}${suit.contexts.decision}`,
-    },
-    visual: {
-      code: rank.code,
-      symbol: suit.symbol,
-      tone: suit.tone,
-    },
-  })),
+  minorRanks.map((rank) => {
+    const meaning = (minorCardMeanings[suit.suit] as Record<string, MinorCardMeaning>)[rank.rank];
+
+    if (!meaning) {
+      throw new Error(`Missing Minor Arcana meaning for ${suit.suit}.${rank.rank}.`);
+    }
+
+    return {
+      id: `minor-${suit.suit}-${rank.rank}`,
+      name: `${suit.name}${rank.label}`,
+      arcana: "minor" as const,
+      suit: suit.suit,
+      rank: rank.rank,
+      element: suit.element,
+      keywords: [...meaning.keywords, ...suit.keywords].slice(0, 6),
+      upright: meaning.upright,
+      reversed: meaning.reversed,
+      advice: meaning.advice,
+      contexts: {
+        general: `${meaning.context}${suit.contexts.general}`,
+        love: `${meaning.context}${suit.contexts.love}`,
+        career: `${meaning.context}${suit.contexts.career}`,
+        wealth: `${meaning.context}${suit.contexts.wealth}`,
+        wellbeing: `${meaning.context}${suit.contexts.wellbeing}`,
+        decision: `${meaning.context}${suit.contexts.decision}`,
+      },
+      visual: {
+        code: rank.code,
+        symbol: suit.symbol,
+        tone: suit.tone,
+      },
+    };
+  }),
 ) satisfies TarotCard[];
 
 export const tarotDeck: TarotCard[] = [...majorArcana, ...minorArcana];

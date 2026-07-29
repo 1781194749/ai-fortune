@@ -14,7 +14,7 @@ import {
   type DeepReportPalmEvidence,
 } from "@/lib/deep-report-readiness";
 import { buildAiCostMetadata, estimateOpenAiCostCents } from "@/lib/ai-cost";
-import { getOpenAIClient, getPremiumOpenAIModel } from "@/lib/openai-client";
+import { getOpenAIClient, getStructuredOpenAIModel } from "@/lib/openai-client";
 import type { MockReportType } from "@/lib/report-store";
 import { createUsageLog } from "@/lib/usage-log-store";
 import {
@@ -300,7 +300,7 @@ export async function buildPaidDeepReport(input: {
     }));
   const local = inputSnapshot.localDraft;
   const client = getOpenAIClient();
-  const model = getPremiumOpenAIModel();
+  const model = getStructuredOpenAIModel();
   const feature = getFeatureCode(inputSnapshot.productCode);
   const prompt = createDeepReportPrompt({
     userId: input.userId,

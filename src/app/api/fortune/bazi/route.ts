@@ -1,12 +1,15 @@
 import { checkEntitlement, getResolvedStarCost } from "@/lib/entitlements";
 import { spendStars } from "@/lib/mock-payment-store";
 import { createMockReport } from "@/lib/report-store";
+import { toCustomerReport } from "@/lib/report-public-view";
 import { buildBaziReading, calculateBazi, type BaziInput } from "@/lib/bazi";
 import { normalizeBirthCalendarType } from "@/lib/birth-calendar";
 import { mergeFortuneProfileFromBaziInput } from "@/lib/fortune-profile-store";
+import { toPublicBaziChart } from "@/lib/fortune-chart-public";
+import { publicApiErrorResponse } from "@/lib/public-api-error";
 import { createSession, getSession } from "@/lib/session";
 
-export async function POST(request: Request) {
+async function createBaziResponse(request: Request) {
   const session = await getSession();
 
   if (!session) {
@@ -91,10 +94,29 @@ export async function POST(request: Request) {
 
   return Response.json({
     ok: true,
-    steps: ["校验出生信息", "计算四柱十神", "分析旺衰喜忌", "排大运流年", "生成命盘报告"],
+    steps: [
+      "校验出生信息",
+      "计算四柱十神",
+      "分析命盘结构",
+      input.gender ? "排大运流年" : "生成流年并暂缓大运",
+      "生成命盘报告",
+    ],
     cost,
     balanceAfter: spendResult.nextSession.starBalance,
-    chart,
-    report,
+    chart: toPublicBaziChart(chart),
+    report: toCustomerReport(report),
   });
+}
+
+export async function POST(request: Request) {
+  try {
+    return await createBaziResponse(request);
+  } catch (error) {
+    return publicApiErrorResponse(error, {
+      context: "create bazi report",
+      message: "本次八字命盘未能完成，请稍后重试。",
+      status: 503,
+      unavailableMessage: "报告服务暂时不可用，请稍后重试。",
+    });
+  }
 }

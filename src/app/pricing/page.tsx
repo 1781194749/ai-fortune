@@ -19,6 +19,8 @@ import {
 import { PurchaseButton } from "@/app/member/purchase-button";
 import { XuanjiMark } from "@/app/_components/xuanji-mark";
 import {
+  freeChatQuota,
+  freeProfileLimit,
   freeStarterStarGrant,
   formatPrice,
   membershipTierByProduct,
@@ -37,24 +39,19 @@ import { getSession } from "@/lib/session";
 import { brand } from "@/lib/site";
 
 const planMeta: Partial<Record<ProductCode, { eyebrow: string; promise: string; badge?: string }>> = {
-  trial_7d: {
-    eyebrow: "先完整体验一次",
-    promise: "适合第一次认识玄机，从建档、提问到报告完整走一遍。",
-  },
   monthly: {
-    eyebrow: "一个月稳定陪伴",
-    promise: "适合把这个月反复出现的问题持续追问，结合手相、报告和基础档案记忆形成上下文。",
-    badge: "最多人选择",
+    eyebrow: "轻量持续问事",
+    promise: "30 次问答覆盖一个月的日常困惑，并保留常用档案与对话上下文。",
   },
   pro_monthly: {
     eyebrow: "高频深度复盘",
-    promise: "适合更高频的追问、报告和手相分析，把长期记忆与多轮推演结合起来。",
-    badge: "深度用户",
+    promise: "100 次问答配合报告与手相额度，适合高频咨询和多主题复盘。",
+    badge: "进阶首选",
   },
-  yearly: {
-    eyebrow: "全年档案沉淀",
-    promise: "适合希望持续记录全年主题、每月报告和长期档案变化的用户。",
-    badge: "长期陪伴",
+  premium_monthly: {
+    eyebrow: "关键阶段全程跟进",
+    promise: "200 次问答、最高档案与报告额度，并开放阶段陪伴和月度总结能力。",
+    badge: "权益最全",
   },
 };
 
@@ -79,7 +76,7 @@ const membershipValues = [
 const faqs = [
   {
     question: "星力是什么？",
-    answer: "星力是服务消耗单位，用于 AI 对话、塔罗、八卦、手相和深度报告等推演。会员核心不是每天刷新大量星力，而是持续档案、复盘和阶段陪伴。",
+    answer: "会员 Chat 按每月问答次数计算，每轮计 1 次。星力仅用于部分独立工具和增值服务，不会替代会员问答额度。",
   },
   {
     question: "开通后会记住哪些信息？",
@@ -95,82 +92,30 @@ const faqs = [
   },
 ] as const;
 
-function localLivePaymentGate() {
-  return {
-    allowed: false,
-    decision: "no_go",
-    code: "LIVE_PAYMENT_NOT_RELEASED",
-    scope: "blocked",
-    scopeLabel: "not_released",
-    label: "not_released",
-    detail: "Payment channel is not released.",
-    action: "Try again later.",
-    message: "Payment channel is not released.",
-    status: "warning",
-    requiresAllowlist: false,
-    allowlist: {
-      configured: false,
-      userIdsConfigured: 0,
-      emailsConfigured: 0,
-      totalAccounts: 0,
-    },
-    currentUser: {
-      checked: true,
-      allowed: false,
-      matchedBy: "none",
-    },
-  } as const;
-}
-
 function getMembershipIntent(value: string | string[] | undefined, membershipProducts: Product[]) {
   const intent = Array.isArray(value) ? value[0] : value;
   return membershipProducts.find((product) => product.code === intent);
 }
 
 function getPlanBenefits(product: Product) {
-  if (product.code === "trial_7d") {
+  if (product.code === "premium_monthly") {
     return [
-      "7 天内建立档案与每日轻问事",
-      `包含 ${product.starGrant ?? 0} 星力追问余量`,
-      `${product.reportQuota ?? 0} 份报告额度 + ${product.palmQuota ?? 0} 次手相浅析额度`,
-    ];
-  }
-
-  if (product.code === "yearly") {
-    return [
-      "全年档案、主题报告和长期记忆",
-      "适合持续跟进年度事业、感情与行动节奏",
-      "自动关联历史 Chat，不用重复解释背景",
-      `包含 ${product.starGrant ?? 0} 星力追问余量、${product.reportQuota ?? 0} 份深度报告、${product.palmQuota ?? 0} 次手相`,
-    ];
-  }
-
-  if (product.code === "monthly") {
-    return [
-      "30 天持续问事与档案记忆",
-      "每周整理一次近期问题脉络",
-      `包含 ${product.starGrant ?? 0} 星力追问余量`,
-      `${product.reportQuota ?? 0} 份深度报告额度 + ${product.palmQuota ?? 0} 次手相分析额度`,
+      `${product.chatQuota ?? 0} 次问答 / 月，每轮统一计 1 次`,
+      `最多保存 ${product.profileLimit ?? 0} 份人物档案`,
+      `${product.reportQuota ?? 0} 份深度报告 + ${product.palmQuota ?? 0} 次手相`,
+      "尊享阶段陪伴、每周复盘与月度总结",
     ];
   }
 
   return [
-    "月内高频追问与复盘",
-    `包含 ${product.starGrant ?? 0} 星力追问余量`,
+    `${product.chatQuota ?? 0} 次问答 / 月，每轮统一计 1 次`,
+    `最多保存 ${product.profileLimit ?? 0} 份人物档案`,
     `${product.reportQuota ?? 0} 份深度报告额度`,
     `${product.palmQuota ?? 0} 次手相分析额度`,
   ];
 }
 
-function getPlanUnit(product: Product) {
-  if (product.code === "trial_7d") {
-    return "/ 7 天";
-  }
-
-  if (product.code === "yearly") {
-    return "/ 年";
-  }
-
+function getPlanUnit() {
   return "/ 月";
 }
 
@@ -179,8 +124,8 @@ function getValueHint(product: Product) {
     return "";
   }
 
-  const daily = product.priceCents / 100 / product.durationDays;
-  return `约 ¥${daily < 1 ? daily.toFixed(1) : daily.toFixed(0)} / 天`;
+  const perQuestion = product.priceCents / 100 / Math.max(1, product.chatQuota ?? 1);
+  return `平均约 ¥${perQuestion.toFixed(2)} / 次问答`;
 }
 
 export default async function PricingPage({
@@ -195,9 +140,9 @@ export default async function PricingPage({
     getRuntimeOneTimeProducts(),
   ]);
   const features = getRuntimeFeatures();
-  const livePaymentGate = features.paymentProvider === "live"
-    ? await getLivePaymentLaunchGate({ user: session ?? undefined })
-    : localLivePaymentGate();
+  const livePaymentEnabled = features.paymentProvider === "live"
+    ? (await getLivePaymentLaunchGate({ user: session ?? undefined })).allowed
+    : false;
   const visibleMembershipProducts = membershipProducts;
   const selectedPlan = getMembershipIntent(intent, visibleMembershipProducts);
 
@@ -217,10 +162,10 @@ export default async function PricingPage({
               先问问 AI
             </Link>
             <Link
-              href={session ? "/member" : createLoginHref("/pricing#plans")}
+              href={session ? "/member/entitlements" : createLoginHref("/pricing#plans")}
               className="inline-flex h-10 items-center justify-center gap-2 rounded-full border border-[#c9a35f]/45 bg-[#c9a35f]/9 px-4 text-[#efd9a6] transition hover:border-[#c9a35f]/70 hover:bg-[#c9a35f]/14"
             >
-              {session ? "进入个人中心" : "登录后购买"}
+              {session ? "查看套餐与用量" : "登录后购买"}
               <ChevronRight size={15} aria-hidden="true" />
             </Link>
           </nav>
@@ -300,8 +245,8 @@ export default async function PricingPage({
               </div>
               {session ? (
                 <div className="mt-5 flex items-center justify-between border-t border-[#292a24] pt-5 text-sm">
-                  <span className="text-[#777168]">当前星力</span>
-                  <span className="font-semibold text-[#efd9a6]">{session.starBalance} 星力可用</span>
+                  <span className="text-[#777168]">本月问答</span>
+                  <span className="font-semibold text-[#efd9a6]">剩余 {Math.max(0, (session.chatQuota ?? 10) - (session.chatUsed ?? 0))} / {session.chatQuota ?? 10} 次</span>
                 </div>
               ) : null}
             </div>
@@ -314,7 +259,7 @@ export default async function PricingPage({
           <div className="mx-auto max-w-3xl text-center">
             <p className="text-xs tracking-[0.26em] text-[#c9a35f]">MEMBERSHIP PLANS</p>
             <h2 className="mt-4 font-ritual text-4xl tracking-[-0.03em] sm:text-5xl">免费轻问，月度陪伴，关键阶段跟进</h2>
-            <p className="mt-5 text-sm leading-7 text-[#8f887b] sm:text-base">天是轻入口，周是复盘点，年度会员（¥399/年）会围绕一个重要主题持续跟进 30 天。</p>
+            <p className="mt-5 text-sm leading-7 text-[#8f887b] sm:text-base">四档权益全部按月计算，从 10 次免费问答到 200 次尊享问答，每一档都明确可查、真实限制。</p>
           </div>
 
           {selectedPlan ? (
@@ -327,7 +272,7 @@ export default async function PricingPage({
                   </p>
                   <h3 className="mt-2 font-ritual text-2xl text-[#f4efe5]">已带回你的购买意图：{selectedPlan.name}</h3>
                   <p className="mt-2 text-sm leading-6 text-[#aaa294]">
-                    确认权益无误后即可继续下单；年度会员还会开放独立的关键阶段陪伴管理页。
+                    确认权益无误后即可继续下单；尊享月卡还会开放独立的关键阶段陪伴管理页。
                   </p>
                   <Link
                     href={`#plan-${selectedPlan.code}`}
@@ -341,7 +286,7 @@ export default async function PricingPage({
                   {session ? (
                     <PurchaseButton
                       productCode={selectedPlan.code}
-                      livePaymentGate={livePaymentGate}
+                      livePaymentEnabled={livePaymentEnabled}
                       ctaLabel={`继续购买${selectedPlan.name}`}
                       featured
                     />
@@ -359,7 +304,7 @@ export default async function PricingPage({
             </div>
           ) : null}
 
-          <div className="mt-12 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+          <div className="mt-12 grid gap-5 md:grid-cols-2 xl:grid-cols-4">
             <article className="relative flex scroll-mt-28 flex-col rounded-[28px] border border-[#3b6258] bg-[#0f1512] p-6 transition duration-300 hover:-translate-y-1 hover:border-[#79b8b1]/60">
               <span className="absolute right-5 top-5 rounded-full border border-[#3b6258] bg-[#2c7b78]/12 px-3 py-1 text-[10px] font-semibold tracking-[0.08em] text-[#79b8b1]">
                 永久免费
@@ -368,7 +313,7 @@ export default async function PricingPage({
               <h3 className="mt-3 font-ritual text-2xl text-[#f4efe5]">免费版</h3>
               <div className="mt-6 flex items-end gap-2">
                 <span className="text-5xl font-semibold tracking-[-0.06em] text-[#f7f0e4]">¥0</span>
-                <span className="pb-1 text-sm text-[#777168]">/ 长期</span>
+                <span className="pb-1 text-sm text-[#777168]">/ 月</span>
               </div>
               <p className="mt-2 text-xs text-[#79b8b1]">无需绑卡，注册即可使用</p>
               <p className="mt-5 min-h-20 text-sm leading-7 text-[#aaa294]">
@@ -377,10 +322,10 @@ export default async function PricingPage({
 
               <div className="mt-6 space-y-3 border-t border-[#29423a] pt-5">
                 {[
-                  `新用户赠送 ${freeStarterStarGrant} 星力轻问余量`,
-                  "每天从一个小问题进入",
+                  `${freeChatQuota} 次问答 / 月，每轮计 1 次`,
+                  `最多保存 ${freeProfileLimit} 份人物档案`,
                   "每日单牌塔罗免费体验",
-                  "档案与推演记录持续保留",
+                  `注册另得 ${freeStarterStarGrant} 星力工具体验`,
                 ].map((benefit) => (
                   <p key={benefit} className="flex items-start gap-2.5 text-sm leading-6 text-[#c8c0b2]">
                     <Check size={15} className="mt-1 shrink-0 text-[#79b8b1]" aria-hidden="true" />
@@ -394,7 +339,7 @@ export default async function PricingPage({
                   href={session ? "/chat" : createLoginHref("/chat")}
                   className="mt-6 inline-flex h-12 w-full items-center justify-center gap-2 rounded-full border border-[#79b8b1]/45 bg-[#2c7b78]/12 px-5 text-sm font-semibold text-[#a5d2cc] transition hover:border-[#79b8b1]/70 hover:bg-[#2c7b78]/18"
                 >
-                  {session ? "进入免费版" : "免费注册并进入 Chat"}
+                  {session ? "进入免费版" : "免费注册并完成资料"}
                   <ArrowRight size={16} aria-hidden="true" />
                 </Link>
               </div>
@@ -413,16 +358,10 @@ export default async function PricingPage({
               const ctaLabel = isDowngrade
                 ? "当前等级不可购买"
                 : isRenewal
-                  ? product.code === "yearly"
-                    ? "续费年度会员"
-                    : `续费${product.name}`
+                  ? `续费${product.name}`
                   : session && session.tier !== "FREE"
-                    ? product.code === "yearly"
-                      ? "升级到年度会员"
-                      : `升级到${product.name}`
-                    : product.code === "yearly"
-                      ? "开启年度会员"
-                      : `开通${product.name}`;
+                    ? `升级到${product.name}`
+                    : `开通${product.name}`;
 
               return (
                 <article
@@ -445,7 +384,7 @@ export default async function PricingPage({
                   <h3 className="mt-3 font-ritual text-2xl text-[#f4efe5]">{product.name}</h3>
                   <div className="mt-6 flex items-end gap-2">
                     <span className="text-5xl font-semibold tracking-[-0.06em] text-[#f7f0e4]">{formatPrice(product.priceCents, product.currency)}</span>
-                    <span className="pb-1 text-sm text-[#777168]">{getPlanUnit(product)}</span>
+                    <span className="pb-1 text-sm text-[#777168]">{getPlanUnit()}</span>
                   </div>
                   <p className="mt-2 text-xs text-[#6f6a61]">{getValueHint(product)}</p>
                   <p className="mt-5 min-h-20 text-sm leading-7 text-[#aaa294]">{meta?.promise ?? product.description}</p>
@@ -463,7 +402,7 @@ export default async function PricingPage({
                     {session ? (
                       <PurchaseButton
                         productCode={product.code}
-                        livePaymentGate={livePaymentGate}
+                        livePaymentEnabled={livePaymentEnabled}
                         ctaLabel={ctaLabel}
                         featured={featured}
                         disabledReason={isDowngrade
@@ -475,7 +414,7 @@ export default async function PricingPage({
                         href={createLoginHref(`/pricing?intent=${product.code}#plans`)}
                         className={`mt-6 inline-flex h-12 w-full items-center justify-center gap-2 rounded-full px-5 text-sm font-semibold transition ${featured ? "bg-[#c9a35f] text-[#17130d] hover:bg-[#efd9a6]" : "border border-[#c9a35f]/45 bg-[#c9a35f]/8 text-[#efd9a6] hover:border-[#c9a35f]/70"}`}
                       >
-                        {product.code === "yearly" ? "登录后开启年度会员" : "登录后选择"}
+                        登录后选择
                         <ArrowRight size={16} aria-hidden="true" />
                       </Link>
                     )}
@@ -581,7 +520,7 @@ export default async function PricingPage({
             href={session ? "/chat" : createLoginHref("/chat")}
             className="mt-8 inline-flex h-13 items-center justify-center gap-2 rounded-full bg-[#c9a35f] px-8 font-semibold text-[#17130d] transition hover:bg-[#efd9a6]"
           >
-            {session ? "进入 Chat 开始问事" : "登录后直接进入 Chat"}
+            {session ? "进入 Chat 开始问事" : "登录并完成资料后开始问事"}
             <ArrowRight size={17} aria-hidden="true" />
           </Link>
         </div>

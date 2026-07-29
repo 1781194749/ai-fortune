@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { ArrowLeft, ScrollText, Sparkles } from "lucide-react";
 import { getMockReport } from "@/lib/report-store";
+import { toCustomerReport } from "@/lib/report-public-view";
 import { createLoginHref } from "@/lib/return-to";
 import { getSession } from "@/lib/session";
 import { brand } from "@/lib/site";
@@ -55,11 +56,13 @@ export default async function ReportExportPage({
     redirect(createLoginHref(`/reports/${encodeURIComponent(reportId)}/export`));
   }
 
-  const report = await getMockReport(reportId);
+  const storedReport = await getMockReport(reportId);
 
-  if (!report || report.userId !== session.userId || report.status !== "COMPLETED") {
+  if (!storedReport || storedReport.userId !== session.userId || storedReport.status !== "COMPLETED") {
     notFound();
   }
+
+  const report = toCustomerReport(storedReport);
 
   return (
     <main className="min-h-screen bg-[#080705] px-5 py-8 text-[#f5efe2] sm:px-8">
@@ -90,7 +93,7 @@ export default async function ReportExportPage({
             </span>
           </div>
 
-          <div className="mt-6 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mt-6 grid gap-3 text-sm sm:grid-cols-3">
             <div className="rounded-md border border-[#ded0b2] bg-white/55 p-3">
               <p className="text-xs text-[#7d725f]">报告类型</p>
               <p className="mt-1 font-semibold">{reportTypeLabel(report.type)}</p>
@@ -98,10 +101,6 @@ export default async function ReportExportPage({
             <div className="rounded-md border border-[#ded0b2] bg-white/55 p-3">
               <p className="text-xs text-[#7d725f]">生成时间</p>
               <p className="mt-1 font-semibold">{formatDateTime(report.updatedAt)}</p>
-            </div>
-            <div className="rounded-md border border-[#ded0b2] bg-white/55 p-3">
-              <p className="text-xs text-[#7d725f]">模型</p>
-              <p className="mt-1 break-all font-semibold">{report.modelUsed ?? "local-tools"}</p>
             </div>
             <div className="rounded-md border border-[#ded0b2] bg-white/55 p-3">
               <p className="text-xs text-[#7d725f]">报告编号</p>

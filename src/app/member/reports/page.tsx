@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { FileText, ScrollText } from "lucide-react";
 import { getUserMockReports } from "@/lib/report-store";
+import { toCustomerReport } from "@/lib/report-public-view";
 import {
   formatTime,
   getReportStatusLabel,
@@ -11,7 +12,7 @@ import { EmptyState, PageHeader, Panel } from "../member-ui";
 
 export default async function MemberReportsPage() {
   const session = await getRequiredMemberSession();
-  const reports = await getUserMockReports(session.userId);
+  const reports = (await getUserMockReports(session.userId)).map(toCustomerReport);
 
   return (
     <div className="space-y-6">
